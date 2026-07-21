@@ -208,7 +208,7 @@
 function computeMonthLabels(){
   const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   const now = new Date();
-  const labels = {overall:'Overall', wtd:'WTD'};
+  const labels = {wtd:'WTD'};
   labels.mtd = monthNames[now.getMonth()];
   for(let i=1;i<=4;i++){
     const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
@@ -240,7 +240,7 @@ const EMPLOYEE_PERIOD_FIELDS = {
   m3: { sales_count:'sales_done_m3', sales_value:'annual_sale_done_m3', hot_total:null, hot_self:null, hot_mgr:null, total_attempts:null, unique_answered:null, talktime:null, total_meet:'total_meet_m3', fresh_meet:'fresh_meet_m3', followup_meet:'followup_meet_m3', self_meet:'self_meet_m3', with_mgr_meet:'with_mgr_meet_m3', hl_assigned:'top3_hl_m3', hl_done:'hl_meeting_done_m3' },
   m4: { sales_count:'sales_done_m4', sales_value:'annual_sale_done_m4', hot_total:null, hot_self:null, hot_mgr:null, total_attempts:null, unique_answered:null, talktime:null, total_meet:'total_meet_m4', fresh_meet:'fresh_meet_m4', followup_meet:'followup_meet_m4', self_meet:'self_meet_m4', with_mgr_meet:'with_mgr_meet_m4', hl_assigned:'top3_hl_m4', hl_done:'hl_meeting_done_m4' },
 };
-let currentPeriod = 'overall';
+let currentPeriod = 'wtd';
 let currentVertical = 'all';
 let dashboardData = null;
 let expanded = { zm: new Set(), rm: new Set(), loc: new Set() };
