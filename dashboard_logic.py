@@ -58,6 +58,8 @@ METRIC_FIELDS = {
 
 UNDERPERFORMER_METRIC = "sales_done"   # overall sales count; ranks within each location group
 UNDERPERFORMER_PCT = 0.20              # bottom 20% flagged, minimum 1 per group if group is non-empty
+UNDERPERFORMER_MIN_TENURE_DAYS = 90    # employees newer than this are never flagged
+TENURE_FIELD = "tenure"                # assumed to be in days
 
 LOCATION_FIELD = "iil_comp_loc_name"
 EMPLOYEE_ID_FIELD = "fk_employeeid"
@@ -122,11 +124,16 @@ def build_node_metrics(rows):
 
 
 def flag_underperformers(rows):
-    """Within one location group, flag the bottom ~20% by overall sales_done.
-    Returns a set of fk_employeeid values that are flagged."""
+    """Within one location group, flag the bottom ~20% by overall sales_done —
+    but only among employees who've been here 90+ days. Newer employees are
+    never flagged, and don't count toward the group size used for the 20%
+    calculation either."""
     if not rows:
         return set()
-    scored = [(r.get(EMPLOYEE_ID_FIELD), _num(r, UNDERPERFORMER_METRIC) or 0) for r in rows]
+    eligible = [r for r in rows if (_num(r, TENURE_FIELD) or 0) >= UNDERPERFORMER_MIN_TENURE_DAYS]
+    if not eligible:
+        return set()
+    scored = [(r.get(EMPLOYEE_ID_FIELD), _num(r, UNDERPERFORMER_METRIC) or 0) for r in eligible]
     scored.sort(key=lambda x: x[1])
     n_flag = max(1, round(len(scored) * UNDERPERFORMER_PCT))
     return set(eid for eid, _ in scored[:n_flag])

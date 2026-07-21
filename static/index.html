@@ -82,12 +82,7 @@
   }
   .chart-panel h2{ font-size:11.5px; text-transform:uppercase; letter-spacing:0.05em; color:var(--muted); margin:0 0 10px; font-weight:600; }
   .chart-holder{ position:relative; height:200px; }
-  .search-panel{
-    background:var(--panel); border:1px solid var(--hairline); border-radius:var(--radius);
-    padding:14px 16px; flex:1 1 260px; min-width:240px; display:flex; flex-direction:column; gap:8px;
-  }
-  .search-panel h2{ font-size:11.5px; text-transform:uppercase; letter-spacing:0.05em; color:var(--muted); margin:0; font-weight:600; }
-  .search-hint{ font-size:11px; color:var(--muted); }
+  .chart-panel-full{ width:100%; }
 
   .tabs{ display:flex; gap:6px; margin-bottom:16px; flex-wrap:wrap; }
   .filter-row{ display:flex; justify-content:space-between; align-items:flex-start; gap:16px; flex-wrap:wrap; }
@@ -187,23 +182,18 @@
     </div>
   </header>
 
-  <div class="kpi-row" id="kpi-row"></div>
-
   <div class="tools-row">
-    <div class="chart-panel">
+    <div class="chart-panel chart-panel-full">
       <h2 id="chart-title">Top ZMs by Sales Count</h2>
       <div class="chart-holder"><canvas id="zmChart"></canvas></div>
-    </div>
-    <div class="search-panel">
-      <h2>Find in the register</h2>
-      <input type="text" id="search-box" placeholder="Search ZM, RM, location, or L1 name…" />
-      <div class="search-hint" id="search-hint">Matches expand and highlight automatically.</div>
     </div>
   </div>
 
   <div class="filter-row">
     <div class="tabs" id="period-tabs"></div>
     <div class="vertical-filter">
+      <label for="zm-select">ZM</label>
+      <select id="zm-select"><option value="all">All ZMs</option></select>
       <label for="vertical-select">Vertical</label>
       <select id="vertical-select"><option value="all">All Verticals</option></select>
     </div>
@@ -215,7 +205,18 @@
 <div id="modal-root"></div>
 
 <script>
-const PERIOD_LABELS = {overall:'Overall', wtd:'WTD', mtd:'MTD', m1:'M1', m2:'M2', m3:'M3', m4:'M4'};
+function computeMonthLabels(){
+  const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const now = new Date();
+  const labels = {overall:'Overall', wtd:'WTD'};
+  labels.mtd = monthNames[now.getMonth()];
+  for(let i=1;i<=4;i++){
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    labels['m'+i] = monthNames[d.getMonth()];
+  }
+  return labels;
+}
+const PERIOD_LABELS = computeMonthLabels();
 
 // Which raw Redash column feeds each employee-detail field, per period.
 // null = genuinely not tracked at that granularity in the source query.
@@ -256,9 +257,8 @@ const verticalSelectEl = document.getElementById('vertical-select');
 const hierarchyStatusEl = document.getElementById('hierarchy-status');
 const hierarchyUploadBtn = document.getElementById('hierarchy-upload');
 const hierarchyFileInput = document.getElementById('hierarchy-file');
-const kpiRowEl = document.getElementById('kpi-row');
-const searchBoxEl = document.getElementById('search-box');
-const searchHintEl = document.getElementById('search-hint');
+const zmSelectEl = document.getElementById('zm-select');
+let currentZmFilter = 'all';
 const chartTitleEl = document.getElementById('chart-title');
 
 function relativeTime(ts){
@@ -292,46 +292,30 @@ function buildTabs(){
 
 function renderAll(){
   buildTabs();
-  renderKPIs();
+  populateZmFilter();
   renderChart();
   renderTree();
 }
 
-// ---------------------------------------------------------------------
-// KPI summary strip — sums across every ZM for the selected period
-// ---------------------------------------------------------------------
-function renderKPIs(){
-  const tree = dashboardData.tree;
-  const showHot = hasHotFields(currentPeriod);
-  const totals = { headcount:0, sales_count:0, hot_total:0, total_meet:0 };
-  Object.values(tree).forEach(zm => {
-    totals.headcount += zm.headcount;
-    const m = zm.metrics[currentPeriod];
-    totals.sales_count += m.sales_count || 0;
-    totals.total_meet += m.total_meet || 0;
-    if(showHot) totals.hot_total += (m.hot_total || 0);
-  });
-  const flaggedCount = Object.values(dashboardData.flags || {}).filter(Boolean).length;
-
-  const cards = [
-    { label:'Total L1 Headcount', value: fmtNum(totals.headcount) },
-    { label:'Sales (count)', value: fmtNum(totals.sales_count) },
-    { label: showHot ? 'Hot Meetings' : 'Total Meetings', value: fmtNum(showHot ? totals.hot_total : totals.total_meet) },
-    { label:'Flagged (Low Performers)', value: fmtNum(flaggedCount), rust:true },
-  ];
-  kpiRowEl.innerHTML = cards.map(c => `
-    <div class="kpi-card ${c.rust?'rust':''}">
-      <div class="label">${c.label}</div>
-      <div class="value">${c.value}</div>
-    </div>
-  `).join('');
+function populateZmFilter(){
+  const zmNames = Object.keys(dashboardData.tree).sort();
+  const current = zmSelectEl.value || 'all';
+  zmSelectEl.innerHTML = '<option value="all">All ZMs</option>' +
+    zmNames.map(zm => `<option value="${escAttr(zm)}">${escHtml(zm)}</option>`).join('');
+  zmSelectEl.value = zmNames.includes(current) ? current : 'all';
 }
 
 // ---------------------------------------------------------------------
 // Top-ZM bar chart
 // ---------------------------------------------------------------------
-function renderChart(){
+function getFilteredTree(){
   const tree = dashboardData.tree;
+  if(!currentZmFilter || currentZmFilter === 'all') return tree;
+  return tree[currentZmFilter] ? { [currentZmFilter]: tree[currentZmFilter] } : {};
+}
+
+function renderChart(){
+  const tree = getFilteredTree();
   const entries = Object.entries(tree)
     .map(([zm, node]) => ({ zm, value: node.metrics[currentPeriod].sales_count || 0 }))
     .sort((a,b) => b.value - a.value)
@@ -395,7 +379,7 @@ function matches(name){
 }
 
 function renderTree(){
-  const tree = dashboardData.tree;
+  const tree = getFilteredTree();
   const showHot = hasHotFields(currentPeriod);
   const searching = searchTerm.length > 0;
 
@@ -499,11 +483,7 @@ function renderTree(){
   });
 }
 
-searchBoxEl.addEventListener('input', (e) => {
-  searchTerm = e.target.value.trim();
-  searchHintEl.textContent = searchTerm ? `Showing matches for "${searchTerm}"` : 'Matches expand and highlight automatically.';
-  renderTree();
-});
+// (Search panel removed — search-box no longer exists in the DOM.)
 
 // ---------------------------------------------------------------------
 // Employee detail modal — Profile (period-independent) + Performance
@@ -644,6 +624,11 @@ refreshBtn.addEventListener('click', () => fetchDashboard(true));
 verticalSelectEl.addEventListener('change', (e) => {
   currentVertical = e.target.value;
   fetchDashboard(false);
+});
+zmSelectEl.addEventListener('change', (e) => {
+  currentZmFilter = e.target.value;
+  renderChart();
+  renderTree();
 });
 
 hierarchyUploadBtn.addEventListener('click', async () => {
