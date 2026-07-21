@@ -1,0 +1,648 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Dashboard</title>
+<script src="/vendor/chart.umd.js"></script>
+<style>
+  :root{
+    --bg: #F6F7F8;
+    --panel: #FFFFFF;
+    --panel-2: #FBFBFC;
+    --hairline: #DFE3E8;
+    --text: #1A1D24;
+    --muted: #6B7280;
+    --navy: #1E3A5F;
+    --navy-soft: #E7EDF3;
+    --rust: #C4571F;
+    --rust-soft: #FBEAE0;
+    --teal: #2F7A5C;
+    --teal-soft: #E5F2ED;
+    --slate: #4E7FB5;
+    --radius: 10px;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background: var(--bg); color: var(--text);
+    font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+    min-height:100vh;
+  }
+  .wrap{max-width:1440px; margin:0 auto; padding:24px 20px 60px;}
+
+  header{
+    display:flex; align-items:flex-start; justify-content:space-between;
+    padding-bottom:16px; margin-bottom:20px; border-bottom:2px solid var(--navy);
+    flex-wrap:wrap; gap:14px;
+  }
+  .title-block h1{ font-size:21px; font-weight:700; margin:0 0 4px; color:var(--navy); letter-spacing:-0.01em; }
+  .title-block p{ margin:0; color:var(--muted); font-size:12.5px; }
+
+  .status-col{ display:flex; flex-direction:column; align-items:flex-end; gap:8px; font-size:12px; color:var(--muted); }
+  .status-row{ display:flex; align-items:center; gap:8px; }
+  .pulse{ width:7px; height:7px; border-radius:50%; background:var(--teal); flex:none; }
+  .pulse.error{ background:#C0392B; }
+
+  button{
+    background: var(--panel); border:1px solid var(--hairline); color:var(--navy);
+    font-family:inherit; font-size:12px; font-weight:600; padding:6px 12px; border-radius:7px;
+    cursor:pointer;
+  }
+  button:hover{ border-color:var(--navy); background:var(--navy-soft); }
+  button:disabled{ opacity:0.5; cursor:default; }
+  input[type=file]{ font-size:11px; color:var(--muted); max-width:170px; }
+  input[type=text]{
+    font-family:inherit; font-size:13px; padding:8px 12px; border-radius:8px;
+    border:1px solid var(--hairline); background:var(--panel); color:var(--text); width:280px;
+  }
+  input[type=text]:focus{ outline:2px solid var(--slate); outline-offset:1px; }
+
+  .hierarchy-box{
+    display:flex; align-items:center; gap:8px; background:var(--panel); border:1px solid var(--hairline);
+    border-radius:8px; padding:6px 10px; font-size:11.5px;
+  }
+
+  /* KPI summary strip */
+  .kpi-row{ display:grid; grid-template-columns:repeat(auto-fit, minmax(160px,1fr)); gap:12px; margin-bottom:20px; }
+  .kpi-card{
+    background:var(--panel); border:1px solid var(--hairline); border-radius:8px;
+    padding:14px 16px 12px; border-top:3px solid var(--navy);
+  }
+  .kpi-card.rust{ border-top-color:var(--rust); }
+  .kpi-card .label{ font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:6px; }
+  .kpi-card .value{ font-family:Consolas,'Cascadia Mono',monospace; font-size:22px; font-weight:700; color:var(--text); font-variant-numeric:tabular-nums; }
+  .kpi-card.rust .value{ color:var(--rust); }
+
+  /* Chart + search row */
+  .tools-row{ display:flex; gap:16px; margin-bottom:16px; align-items:stretch; flex-wrap:wrap; }
+  .chart-panel{
+    background:var(--panel); border:1px solid var(--hairline); border-radius:var(--radius);
+    padding:14px 16px; flex:1 1 420px; min-width:320px;
+  }
+  .chart-panel h2{ font-size:11.5px; text-transform:uppercase; letter-spacing:0.05em; color:var(--muted); margin:0 0 10px; font-weight:600; }
+  .chart-holder{ position:relative; height:200px; }
+  .search-panel{
+    background:var(--panel); border:1px solid var(--hairline); border-radius:var(--radius);
+    padding:14px 16px; flex:1 1 260px; min-width:240px; display:flex; flex-direction:column; gap:8px;
+  }
+  .search-panel h2{ font-size:11.5px; text-transform:uppercase; letter-spacing:0.05em; color:var(--muted); margin:0; font-weight:600; }
+  .search-hint{ font-size:11px; color:var(--muted); }
+
+  .tabs{ display:flex; gap:6px; margin-bottom:16px; flex-wrap:wrap; }
+  .tab{
+    padding:7px 14px; border-radius:8px; border:1px solid var(--hairline); background:var(--panel);
+    color:var(--muted); font-size:12.5px; font-weight:600; cursor:pointer;
+  }
+  .tab.active{ background:var(--navy); color:#fff; border-color:var(--navy); }
+
+  .tree-panel{ background:var(--panel); border:1px solid var(--hairline); border-radius:var(--radius); overflow:hidden; }
+  .tree-header, .tree-row{
+    display:grid; align-items:center;
+    grid-template-columns: minmax(220px,2.2fr) 70px repeat(5, 100px);
+    gap:6px; padding:9px 14px;
+  }
+  .tree-header{
+    background:var(--panel-2); font-size:10.5px; text-transform:uppercase; letter-spacing:0.04em;
+    color:var(--muted); border-bottom:1px solid var(--hairline); font-weight:600;
+  }
+  .tree-header .num, .tree-row .num{ text-align:right; }
+  .tree-row{ border-bottom:1px solid #EEF0F2; font-size:13px; cursor:pointer; }
+  .tree-row:hover{ background:var(--navy-soft); }
+  .tree-row.dimmed{ opacity:0.35; }
+  .tree-row .num{ font-family:Consolas,'Cascadia Mono',monospace; font-variant-numeric:tabular-nums; }
+  .name-cell{ display:flex; align-items:center; gap:8px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .caret{ display:inline-block; width:12px; color:var(--muted); flex:none; }
+  .depth-0{ font-weight:700; }
+  .depth-0 .name-cell{ color:var(--navy); }
+  .depth-1 .name-cell{ padding-left:20px; }
+  .depth-2 .name-cell{ padding-left:40px; }
+  .depth-3 .name-cell{ padding-left:60px; font-weight:400; }
+  .depth-3{ cursor:pointer; }
+  .depth-3:hover .name-cell{ color:var(--navy); text-decoration:underline; }
+  .flag-badge{
+    display:inline-block; background:var(--rust-soft); color:var(--rust); font-size:9.5px; font-weight:700;
+    padding:2px 7px; border-radius:20px; margin-left:6px; flex:none; border:1px solid var(--rust);
+  }
+  .headcount-pill{ color:var(--muted); font-size:11px; }
+  mark{ background:#FCE8B8; color:inherit; border-radius:2px; padding:0 1px; }
+
+  .empty-cell{ color:#C7CBD1; }
+
+  .modal-backdrop{
+    position:fixed; inset:0; background:rgba(20,22,26,0.45); display:flex; align-items:center; justify-content:center;
+    z-index:100; padding:20px;
+  }
+  .modal{
+    background:var(--panel); border:1px solid var(--hairline); border-radius:var(--radius);
+    max-width:720px; width:100%; max-height:85vh; overflow-y:auto; padding:22px 24px;
+  }
+  .modal h3{ margin:0 0 4px; font-size:17px; color:var(--navy); }
+  .modal .sub{ color:var(--muted); font-size:12px; margin-bottom:16px; }
+  .modal-section-label{
+    font-size:11px; text-transform:uppercase; letter-spacing:0.05em; font-weight:700;
+    color:var(--navy); margin:18px 0 8px; padding-bottom:4px; border-bottom:2px solid var(--navy-soft);
+  }
+  .modal-section-label:first-of-type{ margin-top:0; }
+  .kv-grid{ display:grid; grid-template-columns:1fr 1fr; gap:8px 20px; }
+  .kv-row{ display:flex; justify-content:space-between; gap:10px; padding:6px 0; border-bottom:1px solid #EEF0F2; font-size:12.5px; }
+  .kv-row .k{ color:var(--muted); }
+  .kv-row .v{ font-family:Consolas,monospace; font-variant-numeric:tabular-nums; text-align:right; }
+  .modal-close{ float:right; }
+
+  .error-banner{ text-align:center; padding:40px 20px; color:#C0392B; }
+  .loading{ text-align:center; padding:40px 20px; color:var(--muted); }
+
+  @media (max-width: 900px){
+    .tree-header, .tree-row{ grid-template-columns: minmax(160px,1.6fr) 50px repeat(5, 80px); font-size:11px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="title-block">
+      <h1 id="dash-title">Dashboard</h1>
+      <p>ZM → RM → Location → L1 performance register</p>
+    </div>
+    <div class="status-col">
+      <div class="status-row">
+        <span class="pulse" id="pulse-dot"></span>
+        <span id="updated-text">connecting…</span>
+        <button id="refresh">Refresh data</button>
+      </div>
+      <div class="hierarchy-box">
+        <span id="hierarchy-status">hierarchy: —</span>
+        <input type="file" id="hierarchy-file" accept=".xlsx" />
+        <button id="hierarchy-upload">Upload weekly sheet</button>
+      </div>
+    </div>
+  </header>
+
+  <div class="kpi-row" id="kpi-row"></div>
+
+  <div class="tools-row">
+    <div class="chart-panel">
+      <h2 id="chart-title">Top ZMs by Sales Count</h2>
+      <div class="chart-holder"><canvas id="zmChart"></canvas></div>
+    </div>
+    <div class="search-panel">
+      <h2>Find in the register</h2>
+      <input type="text" id="search-box" placeholder="Search ZM, RM, location, or L1 name…" />
+      <div class="search-hint" id="search-hint">Matches expand and highlight automatically.</div>
+    </div>
+  </div>
+
+  <div class="tabs" id="period-tabs"></div>
+
+  <div id="content"><div class="loading">Loading…</div></div>
+</div>
+
+<div id="modal-root"></div>
+
+<script>
+const PERIOD_LABELS = {overall:'Overall', wtd:'WTD', mtd:'MTD', m1:'M1', m2:'M2', m3:'M3', m4:'M4'};
+
+// Which raw Redash column feeds each employee-detail field, per period.
+// null = genuinely not tracked at that granularity in the source query.
+const PROFILE_FIELDS = [
+  { key:'manager_name', label:'Manager Name' },
+  { key:'_am', label:'Area Manager (AM)' },
+  { key:'_rm', label:'Regional Manager (RM)' },
+  { key:'_zm', label:'Zonal Manager (ZM)' },
+  { key:'iil_comp_loc_name', label:'Location' },
+  { key:'joiningdate', label:'Joining Date' },
+  { key:'tenure', label:'Tenure' },
+  { key:'tenure_bucket', label:'Tenure Bucket' },
+];
+
+const EMPLOYEE_PERIOD_FIELDS = {
+  overall: { sales_count:'sales_done', sales_value:'annual_sale_done', hot_total:'l1_hot_glids', hot_self:'l1_hot_self_meet', hot_mgr:'l1_hot_with_mgr_meet', total_attempts:'total_attempts', unique_answered:'call_answered', talktime:'avg_daily_tt_hhmmss', total_meet:'total_meet', fresh_meet:'fresh_meet', followup_meet:'followup_meet', self_meet:'self_meet', with_mgr_meet:'with_mgr_meet', hl_assigned:'top3_hl_assigned', hl_done:'hl_meeting_done' },
+  wtd: { sales_count:'week_sales_done', sales_value:'annual_week_sale_done', hot_total:'l1_hot_glids_wtd', hot_self:'l1_hot_self_meet_wtd', hot_mgr:'l1_hot_with_mgr_meet_wtd', total_attempts:'total_attempts_wtd', unique_answered:'call_answered_wtd', talktime:'avg_tt_hhmmss_wtd', total_meet:'total_meet_wtd', fresh_meet:'fresh_meet_wtd', followup_meet:'followup_meet_wtd', self_meet:'self_meet_wtd', with_mgr_meet:'with_mgr_meet_wtd', hl_assigned:'top3_hl_wtd', hl_done:'hl_meeting_done_wtd' },
+  mtd: { sales_count:'month_sales_done', sales_value:'annual_month_sale_done', hot_total:'l1_hot_glids_mtd', hot_self:'l1_hot_self_meet_mtd', hot_mgr:'l1_hot_with_mgr_meet_mtd', total_attempts:'total_attempts_mtd', unique_answered:'call_answered_mtd', talktime:'avg_tt_hhmmss_mtd', total_meet:'total_meet_mtd', fresh_meet:'fresh_meet_mtd', followup_meet:'followup_meet_mtd', self_meet:'self_meet_mtd', with_mgr_meet:'with_mgr_meet_mtd', hl_assigned:'top3_hl_mtd', hl_done:'hl_meeting_done_mtd' },
+  m1: { sales_count:'sales_done_m1', sales_value:'annual_sale_done_m1', hot_total:'l1_hot_glids_m1', hot_self:'l1_hot_self_meet_m1', hot_mgr:'l1_hot_with_mgr_meet_m1', total_attempts:'total_attempts_m1', unique_answered:'call_answered_m1', talktime:'avg_tt_hhmmss_m1', total_meet:'total_meet_m1', fresh_meet:'fresh_meet_m1', followup_meet:'followup_meet_m1', self_meet:'self_meet_m1', with_mgr_meet:'with_mgr_meet_m1', hl_assigned:'top3_hl_m1', hl_done:'hl_meeting_done_m1' },
+  m2: { sales_count:'sales_done_m2', sales_value:'annual_sale_done_m2', hot_total:null, hot_self:null, hot_mgr:null, total_attempts:null, unique_answered:null, talktime:null, total_meet:'total_meet_m2', fresh_meet:'fresh_meet_m2', followup_meet:'followup_meet_m2', self_meet:'self_meet_m2', with_mgr_meet:'with_mgr_meet_m2', hl_assigned:'top3_hl_m2', hl_done:'hl_meeting_done_m2' },
+  m3: { sales_count:'sales_done_m3', sales_value:'annual_sale_done_m3', hot_total:null, hot_self:null, hot_mgr:null, total_attempts:null, unique_answered:null, talktime:null, total_meet:'total_meet_m3', fresh_meet:'fresh_meet_m3', followup_meet:'followup_meet_m3', self_meet:'self_meet_m3', with_mgr_meet:'with_mgr_meet_m3', hl_assigned:'top3_hl_m3', hl_done:'hl_meeting_done_m3' },
+  m4: { sales_count:'sales_done_m4', sales_value:'annual_sale_done_m4', hot_total:null, hot_self:null, hot_mgr:null, total_attempts:null, unique_answered:null, talktime:null, total_meet:'total_meet_m4', fresh_meet:'fresh_meet_m4', followup_meet:'followup_meet_m4', self_meet:'self_meet_m4', with_mgr_meet:'with_mgr_meet_m4', hl_assigned:'top3_hl_m4', hl_done:'hl_meeting_done_m4' },
+};
+let currentPeriod = 'overall';
+let dashboardData = null;
+let expanded = { zm: new Set(), rm: new Set(), loc: new Set() };
+let searchTerm = '';
+let zmChartInstance = null;
+
+const contentEl = document.getElementById('content');
+const updatedTextEl = document.getElementById('updated-text');
+const pulseDot = document.getElementById('pulse-dot');
+const refreshBtn = document.getElementById('refresh');
+const titleEl = document.getElementById('dash-title');
+const tabsEl = document.getElementById('period-tabs');
+const hierarchyStatusEl = document.getElementById('hierarchy-status');
+const hierarchyUploadBtn = document.getElementById('hierarchy-upload');
+const hierarchyFileInput = document.getElementById('hierarchy-file');
+const kpiRowEl = document.getElementById('kpi-row');
+const searchBoxEl = document.getElementById('search-box');
+const searchHintEl = document.getElementById('search-hint');
+const chartTitleEl = document.getElementById('chart-title');
+
+function relativeTime(ts){
+  if(!ts) return 'never';
+  const diff = Math.max(0, (Date.now()/1000) - ts);
+  if(diff < 60) return 'just now';
+  if(diff < 3600) return Math.floor(diff/60) + ' min ago';
+  if(diff < 86400) return Math.floor(diff/3600) + ' hr ago';
+  return Math.floor(diff/86400) + ' day(s) ago';
+}
+function fmtNum(v){
+  if(v === null || v === undefined) return '—';
+  return Number(v).toLocaleString('en-IN', {maximumFractionDigits:0});
+}
+function fmtCurrency(v){
+  if(v === null || v === undefined) return '—';
+  return '₹' + Number(v).toLocaleString('en-IN', {maximumFractionDigits:0});
+}
+function hasHotFields(period){ return ['overall','wtd','mtd','m1'].includes(period); }
+
+function buildTabs(){
+  tabsEl.innerHTML = '';
+  Object.entries(PERIOD_LABELS).forEach(([key,label]) => {
+    const tab = document.createElement('div');
+    tab.className = 'tab' + (key === currentPeriod ? ' active' : '');
+    tab.textContent = label;
+    tab.addEventListener('click', () => { currentPeriod = key; renderAll(); });
+    tabsEl.appendChild(tab);
+  });
+}
+
+function renderAll(){
+  buildTabs();
+  renderKPIs();
+  renderChart();
+  renderTree();
+}
+
+// ---------------------------------------------------------------------
+// KPI summary strip — sums across every ZM for the selected period
+// ---------------------------------------------------------------------
+function renderKPIs(){
+  const tree = dashboardData.tree;
+  const showHot = hasHotFields(currentPeriod);
+  const totals = { headcount:0, sales_count:0, hot_total:0, total_meet:0 };
+  Object.values(tree).forEach(zm => {
+    totals.headcount += zm.headcount;
+    const m = zm.metrics[currentPeriod];
+    totals.sales_count += m.sales_count || 0;
+    totals.total_meet += m.total_meet || 0;
+    if(showHot) totals.hot_total += (m.hot_total || 0);
+  });
+  const flaggedCount = Object.values(dashboardData.flags || {}).filter(Boolean).length;
+
+  const cards = [
+    { label:'Total L1 Headcount', value: fmtNum(totals.headcount) },
+    { label:'Sales (count)', value: fmtNum(totals.sales_count) },
+    { label: showHot ? 'Hot Meetings' : 'Total Meetings', value: fmtNum(showHot ? totals.hot_total : totals.total_meet) },
+    { label:'Flagged (Low Performers)', value: fmtNum(flaggedCount), rust:true },
+  ];
+  kpiRowEl.innerHTML = cards.map(c => `
+    <div class="kpi-card ${c.rust?'rust':''}">
+      <div class="label">${c.label}</div>
+      <div class="value">${c.value}</div>
+    </div>
+  `).join('');
+}
+
+// ---------------------------------------------------------------------
+// Top-ZM bar chart
+// ---------------------------------------------------------------------
+function renderChart(){
+  const tree = dashboardData.tree;
+  const entries = Object.entries(tree)
+    .map(([zm, node]) => ({ zm, value: node.metrics[currentPeriod].sales_count || 0 }))
+    .sort((a,b) => b.value - a.value)
+    .slice(0, 8);
+
+  chartTitleEl.textContent = `Top ZMs by Sales Count — ${PERIOD_LABELS[currentPeriod]}`;
+
+  const ctx = document.getElementById('zmChart');
+  if(zmChartInstance) zmChartInstance.destroy();
+  zmChartInstance = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: entries.map(e => e.zm),
+      datasets: [{
+        data: entries.map(e => e.value),
+        backgroundColor: '#1E3A5F',
+        borderRadius: 3,
+        maxBarThickness: 22,
+      }]
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display:false } },
+      scales: {
+        x: { ticks:{ color:'#6B7280', font:{family:'Consolas', size:10} }, grid:{ color:'#EEF0F2' } },
+        y: { ticks:{ color:'#1A1D24', font:{family:'Segoe UI', size:11} }, grid:{ display:false } }
+      }
+    }
+  });
+}
+
+// ---------------------------------------------------------------------
+// Tree rendering, with search-driven auto-expand + highlight + dimming
+// ---------------------------------------------------------------------
+function metricCells(metrics, period){
+  const showHot = hasHotFields(period);
+  const cells = [ fmtNum(metrics.sales_count) ];
+  if(showHot){
+    cells.push(fmtNum(metrics.hot_total), fmtNum(metrics.hot_self), fmtNum(metrics.hot_mgr));
+  } else {
+    cells.push('<span class="empty-cell">—</span>','<span class="empty-cell">—</span>','<span class="empty-cell">—</span>');
+  }
+  cells.push(fmtNum(metrics.total_meet));
+  return cells;
+}
+function escHtml(s){ return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function escAttr(s){ return escHtml(s).replace(/"/g,'&quot;'); }
+function titleCase(s){ return String(s).replace(/[_\-]+/g,' ').replace(/\b\w/g, c => c.toUpperCase()); }
+
+function highlightMatch(name){
+  if(!searchTerm) return escHtml(name);
+  const idx = String(name).toLowerCase().indexOf(searchTerm.toLowerCase());
+  if(idx === -1) return escHtml(name);
+  const s = String(name);
+  return escHtml(s.slice(0,idx)) + '<mark>' + escHtml(s.slice(idx, idx+searchTerm.length)) + '</mark>' + escHtml(s.slice(idx+searchTerm.length));
+}
+function matches(name){
+  if(!searchTerm) return false;
+  return String(name||'').toLowerCase().includes(searchTerm.toLowerCase());
+}
+
+function renderTree(){
+  const tree = dashboardData.tree;
+  const showHot = hasHotFields(currentPeriod);
+  const searching = searchTerm.length > 0;
+
+  // When searching, auto-expand every branch that contains a match so the
+  // person doesn't have to manually click through the hierarchy.
+  if(searching){
+    for(const [zm, zmNode] of Object.entries(tree)){
+      let zmHasMatch = matches(zm);
+      for(const [rm, rmNode] of Object.entries(zmNode.rm_children)){
+        let rmHasMatch = matches(rm);
+        for(const [loc, locNode] of Object.entries(rmNode.location_children)){
+          const locHasMatch = matches(loc) || locNode.employees.some(e => matches(e.name));
+          if(locHasMatch){ expanded.loc.add(zm+'||'+rm+'||'+loc); rmHasMatch = true; }
+        }
+        if(rmHasMatch){ expanded.rm.add(zm+'||'+rm); zmHasMatch = true; }
+      }
+      if(zmHasMatch) expanded.zm.add(zm);
+    }
+  }
+
+  let html = `<div class="tree-panel">`;
+  html += `<div class="tree-header">
+    <div>Name</div><div class="num">HC</div>
+    <div class="num">Sales #</div>
+    <div class="num">${showHot ? 'Hot Total' : 'Meetings'}</div>
+    <div class="num">${showHot ? 'Hot Self' : ''}</div>
+    <div class="num">${showHot ? 'Hot Mgr' : ''}</div>
+    <div class="num">${showHot ? 'Total Meet' : ''}</div>
+  </div>`;
+
+  const zmNames = Object.keys(tree).sort((a,b) => tree[b].headcount - tree[a].headcount);
+  for(const zm of zmNames){
+    const zmNode = tree[zm];
+    const zmKey = zm;
+    const zmOpen = expanded.zm.has(zmKey) || (searching && matches(zm));
+    const zmDim = searching && !matches(zm) && !zmOpen;
+    const cells = metricCells(zmNode.metrics[currentPeriod], currentPeriod);
+    html += `<div class="tree-row depth-0 ${zmDim?'dimmed':''}" data-toggle="zm" data-key="${escAttr(zmKey)}">
+      <div class="name-cell"><span class="caret">${zmOpen?'▼':'▶'}</span>${highlightMatch(zm)} <span class="headcount-pill">(${zmNode.headcount})</span></div>
+      <div class="num">${zmNode.headcount}</div>
+      ${cells.map(c=>`<div class="num">${c}</div>`).join('')}
+    </div>`;
+
+    if(zmOpen){
+      const rmNames = Object.keys(zmNode.rm_children).sort((a,b) => zmNode.rm_children[b].headcount - zmNode.rm_children[a].headcount);
+      for(const rm of rmNames){
+        const rmNode = zmNode.rm_children[rm];
+        const rmKey = zmKey + '||' + rm;
+        const rmOpen = expanded.rm.has(rmKey) || (searching && matches(rm));
+        const rmDim = searching && !matches(rm) && !rmOpen;
+        const rcells = metricCells(rmNode.metrics[currentPeriod], currentPeriod);
+        html += `<div class="tree-row depth-1 ${rmDim?'dimmed':''}" data-toggle="rm" data-key="${escAttr(rmKey)}">
+          <div class="name-cell"><span class="caret">${rmOpen?'▼':'▶'}</span>${highlightMatch(rm)} <span class="headcount-pill">(${rmNode.headcount})</span></div>
+          <div class="num">${rmNode.headcount}</div>
+          ${rcells.map(c=>`<div class="num">${c}</div>`).join('')}
+        </div>`;
+
+        if(rmOpen){
+          const locNames = Object.keys(rmNode.location_children).sort((a,b) => rmNode.location_children[b].headcount - rmNode.location_children[a].headcount);
+          for(const loc of locNames){
+            const locNode = rmNode.location_children[loc];
+            const locKey = rmKey + '||' + loc;
+            const locOpen = expanded.loc.has(locKey) || (searching && matches(loc));
+            const locDim = searching && !matches(loc) && !locOpen;
+            const lcells = metricCells(locNode.metrics[currentPeriod], currentPeriod);
+            html += `<div class="tree-row depth-2 ${locDim?'dimmed':''}" data-toggle="loc" data-key="${escAttr(locKey)}">
+              <div class="name-cell"><span class="caret">${locOpen?'▼':'▶'}</span>${highlightMatch(loc)} <span class="headcount-pill">(${locNode.headcount})</span></div>
+              <div class="num">${locNode.headcount}</div>
+              ${lcells.map(c=>`<div class="num">${c}</div>`).join('')}
+            </div>`;
+
+            if(locOpen){
+              const emps = [...locNode.employees].sort((a,b) => (b.flagged - a.flagged));
+              for(const emp of emps){
+                const empDim = searching && !matches(loc) && !matches(rm) && !matches(zm) && !matches(emp.name);
+                html += `<div class="tree-row depth-3 ${empDim?'dimmed':''}" data-employee="${escAttr(emp.id)}">
+                  <div class="name-cell">${highlightMatch(emp.name || emp.id)} ${emp.flagged ? '<span class="flag-badge">LOW</span>' : ''}</div>
+                  <div class="num"></div><div class="num"></div><div class="num"></div><div class="num"></div><div class="num"></div><div class="num"></div>
+                </div>`;
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+  html += `</div>`;
+  contentEl.innerHTML = html;
+
+  contentEl.querySelectorAll('[data-toggle]').forEach(el => {
+    el.addEventListener('click', () => {
+      const level = el.dataset.toggle;
+      const key = el.dataset.key;
+      if(expanded[level].has(key)) expanded[level].delete(key);
+      else expanded[level].add(key);
+      renderTree();
+    });
+  });
+  contentEl.querySelectorAll('[data-employee]').forEach(el => {
+    el.addEventListener('click', () => openEmployeeModal(el.dataset.employee));
+  });
+}
+
+searchBoxEl.addEventListener('input', (e) => {
+  searchTerm = e.target.value.trim();
+  searchHintEl.textContent = searchTerm ? `Showing matches for "${searchTerm}"` : 'Matches expand and highlight automatically.';
+  renderTree();
+});
+
+// ---------------------------------------------------------------------
+// Employee detail modal — Profile (period-independent) + Performance
+// section filtered to whichever period tab is currently selected.
+// ---------------------------------------------------------------------
+function fmtPct(numerator, denominator){
+  const n = Number(numerator) || 0;
+  const d = Number(denominator) || 0;
+  if(d === 0) return '—';
+  return (n / d * 100).toFixed(1) + '%';
+}
+function fieldRow(label, value){
+  const display = (value === null || value === undefined || value === '') ? '—' : value;
+  return `<div class="kv-row"><span class="k">${escHtml(label)}</span><span class="v">${escHtml(display)}</span></div>`;
+}
+function notTrackedRow(label){
+  return `<div class="kv-row"><span class="k">${escHtml(label)}</span><span class="v empty-cell">Not tracked at this period</span></div>`;
+}
+
+function buildEmployeeDetailHtml(emp, period){
+  const fields = EMPLOYEE_PERIOD_FIELDS[period];
+  const get = (col) => col ? emp[col] : undefined;
+
+  let profileRows = PROFILE_FIELDS.map(f => fieldRow(f.label, emp[f.key])).join('');
+
+  const perfRows = [];
+  perfRows.push(fieldRow('Sales (count)', fmtNum(get(fields.sales_count))));
+
+  if(fields.hot_total !== null){
+    perfRows.push(fieldRow('Hot Prospects Added', fmtNum(get(fields.hot_total))));
+    perfRows.push(fieldRow('Hot Meetings — Self', fmtNum(get(fields.hot_self))));
+    perfRows.push(fieldRow('Hot Meetings — With Manager', fmtNum(get(fields.hot_mgr))));
+  } else {
+    perfRows.push(notTrackedRow('Hot Prospects Added'));
+    perfRows.push(notTrackedRow('Hot Meetings — Self'));
+    perfRows.push(notTrackedRow('Hot Meetings — With Manager'));
+  }
+
+  if(fields.total_attempts !== null){
+    perfRows.push(fieldRow('Total Attempts', fmtNum(get(fields.total_attempts))));
+    perfRows.push(fieldRow('Unique Answered', fmtNum(get(fields.unique_answered))));
+    perfRows.push(fieldRow('Avg Talktime', get(fields.talktime)));
+  } else {
+    perfRows.push(notTrackedRow('Total Attempts'));
+    perfRows.push(notTrackedRow('Unique Answered'));
+    perfRows.push(notTrackedRow('Avg Talktime'));
+  }
+
+  const totalMeet = get(fields.total_meet);
+  const freshCount = get(fields.fresh_meet);
+  const followupCount = get(fields.followup_meet);
+  perfRows.push(fieldRow('Total Meetings', fmtNum(totalMeet)));
+  perfRows.push(fieldRow('Fresh Meetings', `${fmtNum(freshCount)} (${fmtPct(freshCount, totalMeet)})`));
+  perfRows.push(fieldRow('Followup Meetings', `${fmtNum(followupCount)} (${fmtPct(followupCount, totalMeet)})`));
+  perfRows.push(fieldRow('Meetings — Self', fmtNum(get(fields.self_meet))));
+  perfRows.push(fieldRow('Meetings — With Manager', fmtNum(get(fields.with_mgr_meet))));
+  perfRows.push(fieldRow('HL Assigned', fmtNum(get(fields.hl_assigned))));
+  perfRows.push(fieldRow('HL Meetings Done', fmtNum(get(fields.hl_done))));
+
+  return `
+    <div class="modal-section-label">Profile</div>
+    <div class="kv-grid">${profileRows}</div>
+    <div class="modal-section-label">Performance — ${PERIOD_LABELS[period]}</div>
+    <div class="kv-grid">${perfRows.join('')}</div>
+  `;
+}
+
+async function openEmployeeModal(employeeId){
+  const root = document.getElementById('modal-root');
+  root.innerHTML = `<div class="modal-backdrop"><div class="modal"><div class="loading">Loading employee detail…</div></div></div>`;
+  root.querySelector('.modal-backdrop').addEventListener('click', (e) => {
+    if(e.target.classList.contains('modal-backdrop')) root.innerHTML = '';
+  });
+  try{
+    const res = await fetch(`/api/employee/${encodeURIComponent(employeeId)}`);
+    const payload = await res.json();
+    if(!payload.ok){
+      root.querySelector('.modal').innerHTML = `<button class="modal-close" onclick="document.getElementById('modal-root').innerHTML=''">Close</button><div class="error-banner">${escHtml(payload.error)}</div>`;
+      return;
+    }
+    const emp = payload.employee;
+    const name = emp.employeename || employeeId;
+    root.querySelector('.modal').innerHTML = `
+      <button class="modal-close" id="modal-close-btn">Close</button>
+      <h3>${escHtml(name)}</h3>
+      <div class="sub">Employee ID: ${escHtml(employeeId)} — showing ${escHtml(PERIOD_LABELS[currentPeriod])} figures; switch the period tab behind this panel to see a different period next time you open it</div>
+      ${buildEmployeeDetailHtml(emp, currentPeriod)}
+    `;
+    document.getElementById('modal-close-btn').addEventListener('click', () => { root.innerHTML=''; });
+  } catch(e){
+    root.querySelector('.modal').innerHTML = `<div class="error-banner">Connection error loading employee detail.</div>`;
+  }
+}
+
+// ---------------------------------------------------------------------
+// Data fetching
+// ---------------------------------------------------------------------
+async function fetchDashboard(force){
+  refreshBtn.disabled = true;
+  try{
+    const res = await fetch('/api/dashboard-data' + (force ? '?refresh=1' : ''), { headers: {'Accept-Encoding':'gzip'} });
+    const payload = await res.json();
+    if(!payload.ok){
+      pulseDot.className = 'pulse error';
+      contentEl.innerHTML = `<div class="error-banner">Couldn't load data.<br><code>${escHtml(payload.error)}</code></div>`;
+      updatedTextEl.textContent = 'error';
+      return;
+    }
+    pulseDot.className = 'pulse';
+    dashboardData = payload;
+    titleEl.textContent = payload.title || 'Dashboard';
+    updatedTextEl.textContent = 'data as of ' + relativeTime(payload.redash_cached_at);
+    hierarchyStatusEl.textContent = payload.hierarchy_row_count
+      ? `hierarchy: ${payload.hierarchy_row_count} L1s, updated ${relativeTime(payload.hierarchy_uploaded_at)}`
+      : 'hierarchy: not uploaded yet';
+    if(payload.unmapped_count > 0){
+      hierarchyStatusEl.textContent += ` (${payload.unmapped_count} unmapped)`;
+    }
+    renderAll();
+  } catch(e){
+    pulseDot.className = 'pulse error';
+    updatedTextEl.textContent = 'connection error';
+  } finally {
+    refreshBtn.disabled = false;
+  }
+}
+
+refreshBtn.addEventListener('click', () => fetchDashboard(true));
+
+hierarchyUploadBtn.addEventListener('click', async () => {
+  const file = hierarchyFileInput.files[0];
+  if(!file){ alert('Choose the weekly .xlsx file first.'); return; }
+  hierarchyUploadBtn.disabled = true;
+  hierarchyUploadBtn.textContent = 'Uploading…';
+  try{
+    const formData = new FormData();
+    formData.append('file', file);
+    const res = await fetch('/api/upload-hierarchy', { method:'POST', body: formData });
+    const payload = await res.json();
+    if(!payload.ok){
+      alert('Upload failed: ' + payload.error);
+    } else {
+      hierarchyFileInput.value = '';
+      await fetchDashboard(false);
+    }
+  } catch(e){
+    alert('Upload failed: connection error.');
+  } finally {
+    hierarchyUploadBtn.disabled = false;
+    hierarchyUploadBtn.textContent = 'Upload weekly sheet';
+  }
+});
+
+fetchDashboard(false);
+setInterval(() => fetchDashboard(false), 5 * 60 * 1000);
+</script>
+</body>
+</html>
