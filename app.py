@@ -28,7 +28,7 @@ _state = {
     "hierarchy_map": None,      # {employee_id: {am, rm, zm}}
     "hierarchy_uploaded_at": 0,
     "hierarchy_row_count": 0,
-    "computed": None,           # cached merge_and_build_tree() result
+    "computed_by_vertical": {},  # cached merge_and_build_tree() results, keyed by vertical filter
 }
 
 
@@ -97,7 +97,7 @@ def push_data():
     with _lock:
         _state["redash_rows"] = rows
         _state["redash_pushed_at"] = time.time()
-        _state["computed"] = None  # invalidate merged cache
+        _state["computed_by_vertical"] = {}  # invalidate merged cache
         _save_redash_cache()
 
     return jsonify({"ok": True, "row_count": len(rows), "pushed_at": _state["redash_pushed_at"]})
@@ -159,7 +159,7 @@ def upload_hierarchy():
         _state["hierarchy_map"] = hierarchy_map
         _state["hierarchy_uploaded_at"] = time.time()
         _state["hierarchy_row_count"] = len(hierarchy_map)
-        _state["computed"] = None  # invalidate merged cache
+        _state["computed_by_vertical"] = {}  # invalidate merged cache
         _save_hierarchy_cache()
         try:
             with open(HIERARCHY_FILE, "wb") as out:
@@ -181,16 +181,45 @@ def hierarchy_status():
 
 
 # ---------------------------------------------------------------------------
+# Vertical filter (e.g. Inhouse / TC-Channel / Emerging)
+# ---------------------------------------------------------------------------
+VERTICAL_FIELD = "vertical_id"
+VERTICAL_LABELS = {"1": "Inhouse", "56": "TC-Channel", "42": "Emerging"}
+
+
+def get_available_verticals(rows):
+    """Look at whatever's actually in the pushed data rather than hardcoding
+    just 1/42/56 — if a new vertical gets added to the query later, it shows
+    up here automatically."""
+    seen = set()
+    for r in rows:
+        v = r.get(VERTICAL_FIELD)
+        if v is not None and str(v).strip() != "":
+            seen.add(normalize_id(v))
+    ordered = sorted(seen, key=lambda x: (x not in VERTICAL_LABELS, x))
+    return [{"value": v, "label": VERTICAL_LABELS.get(v, f"Vertical {v}")} for v in ordered]
+
+
+def filter_rows_by_vertical(rows, vertical):
+    if not vertical or vertical == "all":
+        return rows
+    return [r for r in rows if normalize_id(r.get(VERTICAL_FIELD)) == normalize_id(vertical)]
+
+
+# ---------------------------------------------------------------------------
 # Merge + serve
 # ---------------------------------------------------------------------------
-def get_computed():
+def get_computed(vertical="all"):
     with _lock:
         if _state["redash_rows"] is None:
             return None
-        if _state["computed"] is None:
+        cache = _state.setdefault("computed_by_vertical", {})
+        key = vertical or "all"
+        if key not in cache:
             hmap = _state["hierarchy_map"] or {}
-            _state["computed"] = merge_and_build_tree(_state["redash_rows"], hmap)
-        return _state["computed"]
+            rows = filter_rows_by_vertical(_state["redash_rows"], key)
+            cache[key] = merge_and_build_tree(rows, hmap)
+        return cache[key]
 
 
 def gzip_json_response(obj):
@@ -208,7 +237,8 @@ def gzip_json_response(obj):
 @app.route("/api/dashboard-data")
 def api_dashboard_data():
     try:
-        computed = get_computed()
+        vertical = request.args.get("vertical", "all")
+        computed = get_computed(vertical=vertical)
         if computed is None:
             return jsonify({
                 "ok": False,
@@ -221,6 +251,8 @@ def api_dashboard_data():
         payload["hierarchy_uploaded_at"] = _state["hierarchy_uploaded_at"]
         payload["hierarchy_row_count"] = _state["hierarchy_row_count"]
         payload["served_at"] = time.time()
+        payload["selected_vertical"] = vertical
+        payload["available_verticals"] = get_available_verticals(_state["redash_rows"])
         return gzip_json_response(payload)
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
@@ -229,7 +261,8 @@ def api_dashboard_data():
 @app.route("/api/employee/<employee_id>")
 def api_employee(employee_id):
     try:
-        computed = get_computed()
+        vertical = request.args.get("vertical", "all")
+        computed = get_computed(vertical=vertical)
         if computed is None:
             return jsonify({"ok": False, "error": "No data has been pushed yet."}), 404
         eid = normalize_id(employee_id)

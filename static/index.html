@@ -90,6 +90,14 @@
   .search-hint{ font-size:11px; color:var(--muted); }
 
   .tabs{ display:flex; gap:6px; margin-bottom:16px; flex-wrap:wrap; }
+  .filter-row{ display:flex; justify-content:space-between; align-items:flex-start; gap:16px; flex-wrap:wrap; }
+  .vertical-filter{ display:flex; align-items:center; gap:8px; margin-bottom:16px; }
+  .vertical-filter label{ font-size:11px; text-transform:uppercase; letter-spacing:0.05em; color:var(--muted); font-weight:600; }
+  .vertical-filter select{
+    font-family:inherit; font-size:12.5px; font-weight:500; padding:7px 12px; border-radius:8px;
+    border:1px solid var(--hairline); background:var(--panel); color:var(--navy); cursor:pointer;
+  }
+  .vertical-filter select:focus{ outline:2px solid var(--slate); outline-offset:1px; }
   .tab{
     padding:7px 14px; border-radius:8px; border:1px solid var(--hairline); background:var(--panel);
     color:var(--muted); font-size:12.5px; font-weight:600; cursor:pointer;
@@ -193,7 +201,13 @@
     </div>
   </div>
 
-  <div class="tabs" id="period-tabs"></div>
+  <div class="filter-row">
+    <div class="tabs" id="period-tabs"></div>
+    <div class="vertical-filter">
+      <label for="vertical-select">Vertical</label>
+      <select id="vertical-select"><option value="all">All Verticals</option></select>
+    </div>
+  </div>
 
   <div id="content"><div class="loading">Loading…</div></div>
 </div>
@@ -226,6 +240,7 @@ const EMPLOYEE_PERIOD_FIELDS = {
   m4: { sales_count:'sales_done_m4', sales_value:'annual_sale_done_m4', hot_total:null, hot_self:null, hot_mgr:null, total_attempts:null, unique_answered:null, talktime:null, total_meet:'total_meet_m4', fresh_meet:'fresh_meet_m4', followup_meet:'followup_meet_m4', self_meet:'self_meet_m4', with_mgr_meet:'with_mgr_meet_m4', hl_assigned:'top3_hl_m4', hl_done:'hl_meeting_done_m4' },
 };
 let currentPeriod = 'overall';
+let currentVertical = 'all';
 let dashboardData = null;
 let expanded = { zm: new Set(), rm: new Set(), loc: new Set() };
 let searchTerm = '';
@@ -237,6 +252,7 @@ const pulseDot = document.getElementById('pulse-dot');
 const refreshBtn = document.getElementById('refresh');
 const titleEl = document.getElementById('dash-title');
 const tabsEl = document.getElementById('period-tabs');
+const verticalSelectEl = document.getElementById('vertical-select');
 const hierarchyStatusEl = document.getElementById('hierarchy-status');
 const hierarchyUploadBtn = document.getElementById('hierarchy-upload');
 const hierarchyFileInput = document.getElementById('hierarchy-file');
@@ -562,7 +578,7 @@ async function openEmployeeModal(employeeId){
     if(e.target.classList.contains('modal-backdrop')) root.innerHTML = '';
   });
   try{
-    const res = await fetch(`/api/employee/${encodeURIComponent(employeeId)}`);
+    const res = await fetch(`/api/employee/${encodeURIComponent(employeeId)}?vertical=${encodeURIComponent(currentVertical)}`);
     const payload = await res.json();
     if(!payload.ok){
       root.querySelector('.modal').innerHTML = `<button class="modal-close" onclick="document.getElementById('modal-root').innerHTML=''">Close</button><div class="error-banner">${escHtml(payload.error)}</div>`;
@@ -588,7 +604,10 @@ async function openEmployeeModal(employeeId){
 async function fetchDashboard(force){
   refreshBtn.disabled = true;
   try{
-    const res = await fetch('/api/dashboard-data' + (force ? '?refresh=1' : ''), { headers: {'Accept-Encoding':'gzip'} });
+    const params = new URLSearchParams();
+    if(force) params.set('refresh', '1');
+    params.set('vertical', currentVertical);
+    const res = await fetch('/api/dashboard-data?' + params.toString(), { headers: {'Accept-Encoding':'gzip'} });
     const payload = await res.json();
     if(!payload.ok){
       pulseDot.className = 'pulse error';
@@ -606,6 +625,12 @@ async function fetchDashboard(force){
     if(payload.unmapped_count > 0){
       hierarchyStatusEl.textContent += ` (${payload.unmapped_count} unmapped)`;
     }
+    if(payload.available_verticals){
+      const current = verticalSelectEl.value;
+      verticalSelectEl.innerHTML = '<option value="all">All Verticals</option>' +
+        payload.available_verticals.map(v => `<option value="${escAttr(v.value)}">${escHtml(v.label)}</option>`).join('');
+      verticalSelectEl.value = current || 'all';
+    }
     renderAll();
   } catch(e){
     pulseDot.className = 'pulse error';
@@ -616,6 +641,10 @@ async function fetchDashboard(force){
 }
 
 refreshBtn.addEventListener('click', () => fetchDashboard(true));
+verticalSelectEl.addEventListener('change', (e) => {
+  currentVertical = e.target.value;
+  fetchDashboard(false);
+});
 
 hierarchyUploadBtn.addEventListener('click', async () => {
   const file = hierarchyFileInput.files[0];
