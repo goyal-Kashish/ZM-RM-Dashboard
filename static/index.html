@@ -508,7 +508,6 @@ function renderFunnel(){
     { label: 'Avg Daily Meetings', value: fmtRatio(totals.total_meet, totals.working_days) },
     { label: 'Total Sales', value: fmtNum(totals.sales_count) },
     { label: 'Annual Sales', value: fmtNum(totals.sales_value) },
-    { label: 'Avg TP (HP Met)', value: fmtRatio(totals.hp_tp_sum_met, totals.hot_mgr, 0) },
     { label: '% of HP with TP > 200', value: fmtPctSimple(totals.hp_tp_over_200, totals.hot_total) },
   ];
 
