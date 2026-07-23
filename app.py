@@ -6,7 +6,7 @@ import gzip
 from flask import Flask, jsonify, send_from_directory, request, Response
 from threading import Lock
 
-from dashboard_logic import merge_and_build_tree, tree_payload, normalize_id
+from dashboard_logic import merge_and_build_tree, tree_payload, normalize_id, apply_authoritative_location_sales
 
 app = Flask(__name__, static_folder="static", static_url_path="")
 
@@ -20,11 +20,14 @@ DASHBOARD_TITLE = os.environ.get("DASHBOARD_TITLE", "ZM / RM / Location Performa
 HIERARCHY_FILE = os.path.join(os.path.dirname(__file__), "hierarchy_upload.xlsx")
 HIERARCHY_CACHE_FILE = os.path.join(os.path.dirname(__file__), "hierarchy_cache.json")
 REDASH_CACHE_FILE = os.path.join(os.path.dirname(__file__), "redash_cache.json")
+LOCATION_SALES_CACHE_FILE = os.path.join(os.path.dirname(__file__), "location_sales_cache.json")
 
 _lock = Lock()
 _state = {
     "redash_rows": None,        # list of raw dicts, received via /api/push-data
     "redash_pushed_at": 0,
+    "location_sales_rows": None,   # list of raw dicts, received via /api/push-location-sales
+    "location_sales_pushed_at": 0,
     "hierarchy_map": None,      # {employee_id: {am, rm, zm}}
     "hierarchy_uploaded_at": 0,
     "hierarchy_row_count": 0,
@@ -44,6 +47,14 @@ def _load_disk_state():
                 _state["redash_pushed_at"] = payload.get("pushed_at", 0)
         except Exception:
             pass
+    if os.path.exists(LOCATION_SALES_CACHE_FILE):
+        try:
+            with open(LOCATION_SALES_CACHE_FILE, "r") as f:
+                payload = json.load(f)
+                _state["location_sales_rows"] = payload.get("rows")
+                _state["location_sales_pushed_at"] = payload.get("pushed_at", 0)
+        except Exception:
+            pass
     if os.path.exists(HIERARCHY_CACHE_FILE):
         try:
             with open(HIERARCHY_CACHE_FILE, "r") as f:
@@ -59,6 +70,14 @@ def _save_redash_cache():
     try:
         with open(REDASH_CACHE_FILE, "w") as f:
             json.dump({"rows": _state["redash_rows"], "pushed_at": _state["redash_pushed_at"]}, f)
+    except Exception:
+        pass
+
+
+def _save_location_sales_cache():
+    try:
+        with open(LOCATION_SALES_CACHE_FILE, "w") as f:
+            json.dump({"rows": _state["location_sales_rows"], "pushed_at": _state["location_sales_pushed_at"]}, f)
     except Exception:
         pass
 
@@ -101,6 +120,31 @@ def push_data():
         _save_redash_cache()
 
     return jsonify({"ok": True, "row_count": len(rows), "pushed_at": _state["redash_pushed_at"]})
+
+
+@app.route("/api/push-location-sales", methods=["POST"])
+def push_location_sales():
+    """Receives query 13308's rows: authoritative per-location sales figures
+    (WTD/MTD/M1), which replace the employee-summed numbers at the Location
+    level (and their RM/ZM rollups) when viewing All Verticals."""
+    if not PUSH_TOKEN:
+        return jsonify({"ok": False, "error": "Server has no PUSH_TOKEN configured"}), 500
+    supplied = request.headers.get("X-Push-Token", "")
+    if supplied != PUSH_TOKEN:
+        return jsonify({"ok": False, "error": "unauthorized"}), 401
+
+    payload = request.get_json(force=True, silent=True) or {}
+    rows = payload.get("rows")
+    if not isinstance(rows, list):
+        return jsonify({"ok": False, "error": "Expected JSON body like {\"rows\": [...]}"}), 400
+
+    with _lock:
+        _state["location_sales_rows"] = rows
+        _state["location_sales_pushed_at"] = time.time()
+        _state["computed_by_vertical"] = {}  # invalidate merged cache
+        _save_location_sales_cache()
+
+    return jsonify({"ok": True, "row_count": len(rows), "pushed_at": _state["location_sales_pushed_at"]})
 
 
 # ---------------------------------------------------------------------------
@@ -218,7 +262,16 @@ def get_computed(vertical="all"):
         if key not in cache:
             hmap = _state["hierarchy_map"] or {}
             rows = filter_rows_by_vertical(_state["redash_rows"], key)
-            cache[key] = merge_and_build_tree(rows, hmap)
+            computed = merge_and_build_tree(rows, hmap)
+            # Authoritative location sales has no vertical breakdown, so only
+            # apply it to the unfiltered (All Verticals) view — applying an
+            # all-verticals total onto a vertical-filtered view would be wrong.
+            computed["ambiguous_locations"] = []
+            if key == "all" and _state["location_sales_rows"]:
+                computed["ambiguous_locations"] = apply_authoritative_location_sales(
+                    computed["tree"], _state["location_sales_rows"]
+                )
+            cache[key] = computed
         return cache[key]
 
 
@@ -250,6 +303,9 @@ def api_dashboard_data():
         payload["redash_cached_at"] = _state["redash_pushed_at"]
         payload["hierarchy_uploaded_at"] = _state["hierarchy_uploaded_at"]
         payload["hierarchy_row_count"] = _state["hierarchy_row_count"]
+        payload["location_sales_pushed_at"] = _state["location_sales_pushed_at"]
+        payload["location_sales_row_count"] = len(_state["location_sales_rows"] or [])
+        payload["ambiguous_locations"] = computed.get("ambiguous_locations", [])
         payload["served_at"] = time.time()
         payload["selected_vertical"] = vertical
         payload["available_verticals"] = get_available_verticals(_state["redash_rows"])
