@@ -343,27 +343,45 @@ function renderAll(){
 
 function populateHierarchyFilters(){
   const tree = dashboardData.tree;
-  const zmNames = new Set();
+
+  // ZM options: always every ZM present in the (vertical-filtered-by-backend) tree.
+  const zmNames = new Set(Object.keys(tree));
+
+  // RM options: only RMs under the currently selected ZM (if any); all RMs otherwise.
   const rmNames = new Set();
+  Object.entries(tree).forEach(([zm, zmNode]) => {
+    if(currentZmFilter !== 'all' && zm !== currentZmFilter) return;
+    Object.keys(zmNode.rm_children).forEach(rm => rmNames.add(rm));
+  });
+
+  // Location options: only locations under the currently selected ZM *and* RM.
   const locationNames = new Set();
   Object.entries(tree).forEach(([zm, zmNode]) => {
-    zmNames.add(zm);
+    if(currentZmFilter !== 'all' && zm !== currentZmFilter) return;
     Object.entries(zmNode.rm_children).forEach(([rm, rmNode]) => {
-      rmNames.add(rm);
+      if(currentRmFilter !== 'all' && rm !== currentRmFilter) return;
       Object.keys(rmNode.location_children).forEach(loc => locationNames.add(loc));
     });
   });
 
-  function refill(selectEl, names, allLabel){
+  function refill(selectEl, names, allLabel, onReset){
     const current = selectEl.value || 'all';
     const sorted = [...names].sort();
     selectEl.innerHTML = `<option value="all">${allLabel}</option>` +
       sorted.map(n => `<option value="${escAttr(n)}">${escHtml(n)}</option>`).join('');
-    selectEl.value = sorted.includes(current) ? current : 'all';
+    // If the previously-selected value no longer exists under the new
+    // parent filter, reset it to "all" — and sync the underlying state
+    // variable too, since setting .value here doesn't fire a change event.
+    if(sorted.includes(current)){
+      selectEl.value = current;
+    } else {
+      selectEl.value = 'all';
+      if(current !== 'all' && onReset) onReset();
+    }
   }
   refill(zmSelectEl, zmNames, 'All ZMs');
-  refill(rmSelectEl, rmNames, 'All RMs');
-  refill(locationSelectEl, locationNames, 'All Locations');
+  refill(rmSelectEl, rmNames, 'All RMs', () => { currentRmFilter = 'all'; });
+  refill(locationSelectEl, locationNames, 'All Locations', () => { currentLocationFilter = 'all'; });
 }
 
 // ---------------------------------------------------------------------
@@ -829,18 +847,23 @@ verticalSelectEl.addEventListener('change', (e) => {
 });
 zmSelectEl.addEventListener('change', (e) => {
   currentZmFilter = e.target.value;
+  populateHierarchyFilters();
   renderChart();
   renderTree();
+  renderFunnel();
 });
 rmSelectEl.addEventListener('change', (e) => {
   currentRmFilter = e.target.value;
+  populateHierarchyFilters();
   renderChart();
   renderTree();
+  renderFunnel();
 });
 locationSelectEl.addEventListener('change', (e) => {
   currentLocationFilter = e.target.value;
   renderChart();
   renderTree();
+  renderFunnel();
 });
 
 hierarchyUploadBtn.addEventListener('click', async () => {
