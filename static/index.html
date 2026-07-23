@@ -4,7 +4,6 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Dashboard</title>
-<script src="/vendor/chart.umd.js"></script>
 <style>
   :root{
     --bg: #F6F7F8;
@@ -73,16 +72,6 @@
   .kpi-card .label{ font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:6px; }
   .kpi-card .value{ font-family:Consolas,'Cascadia Mono',monospace; font-size:22px; font-weight:700; color:var(--text); font-variant-numeric:tabular-nums; }
   .kpi-card.rust .value{ color:var(--rust); }
-
-  /* Chart + search row */
-  .tools-row{ display:flex; gap:16px; margin-bottom:16px; align-items:stretch; flex-wrap:wrap; }
-  .chart-panel{
-    background:var(--panel); border:1px solid var(--hairline); border-radius:var(--radius);
-    padding:14px 16px; flex:1 1 420px; min-width:320px;
-  }
-  .chart-panel h2{ font-size:11.5px; text-transform:uppercase; letter-spacing:0.05em; color:var(--muted); margin:0 0 10px; font-weight:600; }
-  .chart-holder{ position:relative; height:200px; }
-  .chart-panel-full{ width:100%; }
 
   .tabs{ display:flex; gap:6px; margin-bottom:16px; flex-wrap:wrap; }
   .filter-row{ display:flex; justify-content:space-between; align-items:flex-start; gap:16px; flex-wrap:wrap; }
@@ -215,30 +204,23 @@
     </div>
   </header>
 
-  <div class="tools-row">
-    <div class="chart-panel chart-panel-full">
-      <h2 id="chart-title">Top ZMs by Sales Count</h2>
-      <div class="chart-holder"><canvas id="zmChart"></canvas></div>
-    </div>
-  </div>
-
   <div class="filter-row">
     <div class="tabs" id="period-tabs"></div>
     <div class="vertical-filter">
+      <label for="vertical-select">Vertical</label>
+      <select id="vertical-select"><option value="all">All Verticals</option></select>
       <label for="zm-select">ZM</label>
       <select id="zm-select"><option value="all">All ZMs</option></select>
       <label for="rm-select">RM</label>
       <select id="rm-select"><option value="all">All RMs</option></select>
       <label for="location-select">Location</label>
       <select id="location-select"><option value="all">All Locations</option></select>
-      <label for="vertical-select">Vertical</label>
-      <select id="vertical-select"><option value="all">All Verticals</option></select>
     </div>
   </div>
 
-  <div id="content"><div class="loading">Loading…</div></div>
-
   <div id="funnel-panel"></div>
+
+  <div id="content"><div class="loading">Loading…</div></div>
 </div>
 
 <div id="modal-root"></div>
@@ -282,7 +264,6 @@ let currentVertical = 'all';
 let dashboardData = null;
 let expanded = { zm: new Set(), rm: new Set(), loc: new Set() };
 let searchTerm = '';
-let zmChartInstance = null;
 
 const contentEl = document.getElementById('content');
 const updatedTextEl = document.getElementById('updated-text');
@@ -300,7 +281,6 @@ const locationSelectEl = document.getElementById('location-select');
 let currentZmFilter = 'all';
 let currentRmFilter = 'all';
 let currentLocationFilter = 'all';
-const chartTitleEl = document.getElementById('chart-title');
 
 function relativeTime(ts){
   if(!ts) return 'never';
@@ -334,7 +314,6 @@ function buildTabs(){
 function renderAll(){
   buildTabs();
   populateHierarchyFilters();
-  renderChart();
   renderTree();
   renderFunnel();
 }
@@ -409,6 +388,7 @@ function sumChildMetrics(children){
       if('hp_converted' in m){
         hasFunnel = true;
         agg.hp_converted = (agg.hp_converted||0) + (m.hp_converted||0);
+        agg.hp_converted_met = (agg.hp_converted_met||0) + (m.hp_converted_met||0);
         agg.hp_tp_sum_met = (agg.hp_tp_sum_met||0) + (m.hp_tp_sum_met||0);
         agg.hp_tp_over_200 = (agg.hp_tp_over_200||0) + (m.hp_tp_over_200||0);
         agg.working_days = (agg.working_days||0) + (m.working_days||0);
@@ -450,39 +430,6 @@ function getFilteredTree(){
   return result;
 }
 
-function renderChart(){
-  const tree = getFilteredTree();
-  const entries = Object.entries(tree)
-    .map(([zm, node]) => ({ zm, value: node.metrics[currentPeriod].sales_count || 0 }))
-    .sort((a,b) => b.value - a.value)
-    .slice(0, 8);
-
-  chartTitleEl.textContent = `Top ZMs by Sales Count — ${PERIOD_LABELS[currentPeriod]}`;
-
-  const ctx = document.getElementById('zmChart');
-  if(zmChartInstance) zmChartInstance.destroy();
-  zmChartInstance = new Chart(ctx, {
-    type: 'bar',
-    data: {
-      labels: entries.map(e => e.zm),
-      datasets: [{
-        data: entries.map(e => e.value),
-        backgroundColor: '#1E3A5F',
-        borderRadius: 3,
-        maxBarThickness: 22,
-      }]
-    },
-    options: {
-      indexAxis: 'y',
-      responsive: true, maintainAspectRatio: false,
-      plugins: { legend: { display:false } },
-      scales: {
-        x: { ticks:{ color:'#6B7280', font:{family:'Consolas', size:10} }, grid:{ color:'#EEF0F2' } },
-        y: { ticks:{ color:'#1A1D24', font:{family:'Segoe UI', size:11} }, grid:{ display:false } }
-      }
-    }
-  });
-}
 
 // ---------------------------------------------------------------------
 // Tree rendering, with search-driven auto-expand + highlight + dimming
@@ -533,13 +480,14 @@ function renderFunnel(){
   }
 
   const tree = getFilteredTree();
-  const totals = { hot_total:0, hot_mgr:0, hp_converted:0, hp_tp_sum_met:0, hp_tp_over_200:0, total_meet:0, working_days:0, sales_count:0, sales_value:0 };
+  const totals = { hot_total:0, hot_mgr:0, hp_converted:0, hp_converted_met:0, hp_tp_sum_met:0, hp_tp_over_200:0, total_meet:0, working_days:0, sales_count:0, sales_value:0 };
   Object.values(tree).forEach(zm => {
     const m = zm.metrics[currentPeriod];
     if(!m) return;
     totals.hot_total += m.hot_total || 0;
     totals.hot_mgr += m.hot_mgr || 0;
     totals.hp_converted += m.hp_converted || 0;
+    totals.hp_converted_met += m.hp_converted_met || 0;
     totals.hp_tp_sum_met += m.hp_tp_sum_met || 0;
     totals.hp_tp_over_200 += m.hp_tp_over_200 || 0;
     totals.total_meet += m.total_meet || 0;
@@ -552,7 +500,7 @@ function renderFunnel(){
     { label: 'Hot Prospects (L1)', value: totals.hot_total, pct: null },
     { label: 'L2 Met', value: totals.hot_mgr, pct: fmtPctSimple(totals.hot_mgr, totals.hot_total) },
     { label: 'Converted (of all HP)', value: totals.hp_converted, pct: fmtPctSimple(totals.hp_converted, totals.hot_total) },
-    { label: 'Converted (of L2 Met)', value: totals.hp_converted, pct: fmtPctSimple(totals.hp_converted, totals.hot_mgr) },
+    { label: 'Converted (of L2 Met)', value: totals.hp_converted_met, pct: fmtPctSimple(totals.hp_converted_met, totals.hot_mgr) },
   ];
   const maxVal = Math.max(1, totals.hot_total);
 
@@ -854,20 +802,17 @@ verticalSelectEl.addEventListener('change', (e) => {
 zmSelectEl.addEventListener('change', (e) => {
   currentZmFilter = e.target.value;
   populateHierarchyFilters();
-  renderChart();
   renderTree();
   renderFunnel();
 });
 rmSelectEl.addEventListener('change', (e) => {
   currentRmFilter = e.target.value;
   populateHierarchyFilters();
-  renderChart();
   renderTree();
   renderFunnel();
 });
 locationSelectEl.addEventListener('change', (e) => {
   currentLocationFilter = e.target.value;
-  renderChart();
   renderTree();
   renderFunnel();
 });
