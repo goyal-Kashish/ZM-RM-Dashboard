@@ -393,6 +393,14 @@ function sumChildMetrics(children){
         agg.hp_tp_over_200 = (agg.hp_tp_over_200||0) + (m.hp_tp_over_200||0);
         agg.working_days = (agg.working_days||0) + (m.working_days||0);
       }
+      if('hl_assigned' in m){
+        agg.hl_assigned = (agg.hl_assigned||0) + (m.hl_assigned||0);
+      }
+      if('hl_l2_met' in m){
+        agg.hl_l2_met = (agg.hl_l2_met||0) + (m.hl_l2_met||0);
+        agg.hl_converted = (agg.hl_converted||0) + (m.hl_converted||0);
+        agg.hl_converted_met = (agg.hl_converted_met||0) + (m.hl_converted_met||0);
+      }
     });
     metrics[period] = agg;
   }
@@ -473,14 +481,18 @@ function renderFunnel(){
   if(!FUNNEL_PERIODS.includes(currentPeriod)){
     panel.innerHTML = `
       <div class="funnel-wrap">
-        <div class="funnel-header"><h2>Hot Prospect Funnel</h2></div>
+        <div class="funnel-header"><h2>Hot Prospect / Top 3 HL Funnel</h2></div>
         <div class="funnel-unavailable">This funnel is only available on the WTD, ${PERIOD_LABELS.mtd}, and ${PERIOD_LABELS.m1} tabs.</div>
       </div>`;
     return;
   }
 
   const tree = getFilteredTree();
-  const totals = { hot_total:0, hot_mgr:0, hp_converted:0, hp_converted_met:0, hp_tp_sum_met:0, hp_tp_over_200:0, total_meet:0, working_days:0, sales_count:0, sales_value:0 };
+  const totals = {
+    hot_total:0, hot_mgr:0, hp_converted:0, hp_converted_met:0, hp_tp_sum_met:0, hp_tp_over_200:0,
+    total_meet:0, working_days:0, sales_count:0, sales_value:0,
+    hl_assigned:0, hl_l2_met:0, hl_converted:0, hl_converted_met:0,
+  };
   Object.values(tree).forEach(zm => {
     const m = zm.metrics[currentPeriod];
     if(!m) return;
@@ -494,15 +506,25 @@ function renderFunnel(){
     totals.working_days += m.working_days || 0;
     totals.sales_count += m.sales_count || 0;
     totals.sales_value += m.sales_value || 0;
+    totals.hl_assigned += m.hl_assigned || 0;
+    totals.hl_l2_met += m.hl_l2_met || 0;
+    totals.hl_converted += m.hl_converted || 0;
+    totals.hl_converted_met += m.hl_converted_met || 0;
   });
 
+  // Combined figures: Hot Prospects + Top 3 HL, added together per stage.
+  const combinedTotal = totals.hot_total + totals.hl_assigned;
+  const combinedL2Met = totals.hot_mgr + totals.hl_l2_met;
+  const combinedConverted = totals.hp_converted + totals.hl_converted;
+  const combinedConvertedMet = totals.hp_converted_met + totals.hl_converted_met;
+
   const stages = [
-    { label: 'Hot Prospects (L1)', value: totals.hot_total, pct: null },
-    { label: 'L2 Met', value: totals.hot_mgr, pct: fmtPctSimple(totals.hot_mgr, totals.hot_total) },
-    { label: 'Converted (of all HP)', value: totals.hp_converted, pct: fmtPctSimple(totals.hp_converted, totals.hot_total) },
-    { label: 'Converted (of L2 Met)', value: totals.hp_converted_met, pct: fmtPctSimple(totals.hp_converted_met, totals.hot_mgr) },
+    { label: 'Hot Prospects / Top 3 HL', value: combinedTotal, pct: null },
+    { label: 'L2 Met', value: combinedL2Met, pct: fmtPctSimple(combinedL2Met, combinedTotal) },
+    { label: 'Converted (of all)', value: combinedConverted, pct: fmtPctSimple(combinedConverted, combinedTotal) },
+    { label: 'Converted (of L2 Met)', value: combinedConvertedMet, pct: fmtPctSimple(combinedConvertedMet, combinedL2Met) },
   ];
-  const maxVal = Math.max(1, totals.hot_total);
+  const maxVal = Math.max(1, combinedTotal);
 
   const cards = [
     { label: 'Avg Daily Meetings', value: fmtRatio(totals.total_meet, totals.working_days) },
@@ -514,7 +536,7 @@ function renderFunnel(){
   panel.innerHTML = `
     <div class="funnel-wrap">
       <div class="funnel-header">
-        <h2>Hot Prospect Funnel</h2>
+        <h2>Hot Prospect / Top 3 HL Funnel</h2>
         <span class="sub">${escHtml(PERIOD_LABELS[currentPeriod])} — reflects current ZM/RM/Location/Vertical filters</span>
       </div>
       <div class="funnel-stages">
