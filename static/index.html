@@ -393,13 +393,11 @@ function sumChildMetrics(children){
         agg.hp_tp_over_200 = (agg.hp_tp_over_200||0) + (m.hp_tp_over_200||0);
         agg.working_days = (agg.working_days||0) + (m.working_days||0);
       }
-      if('hl_assigned' in m){
-        agg.hl_assigned = (agg.hl_assigned||0) + (m.hl_assigned||0);
-      }
-      if('hl_l2_met' in m){
-        agg.hl_l2_met = (agg.hl_l2_met||0) + (m.hl_l2_met||0);
-        agg.hl_converted = (agg.hl_converted||0) + (m.hl_converted||0);
-        agg.hl_converted_met = (agg.hl_converted_met||0) + (m.hl_converted_met||0);
+      if('combined_total' in m){
+        agg.combined_total = (agg.combined_total||0) + (m.combined_total||0);
+        agg.combined_l2_met = (agg.combined_l2_met||0) + (m.combined_l2_met||0);
+        agg.combined_converted = (agg.combined_converted||0) + (m.combined_converted||0);
+        agg.combined_converted_met = (agg.combined_converted_met||0) + (m.combined_converted_met||0);
       }
     });
     metrics[period] = agg;
@@ -489,34 +487,32 @@ function renderFunnel(){
 
   const tree = getFilteredTree();
   const totals = {
-    hot_total:0, hot_mgr:0, hp_converted:0, hp_converted_met:0, hp_tp_sum_met:0, hp_tp_over_200:0,
+    hp_tp_sum_met:0, hp_tp_over_200:0, hot_total:0,
     total_meet:0, working_days:0, sales_count:0, sales_value:0,
-    hl_assigned:0, hl_l2_met:0, hl_converted:0, hl_converted_met:0,
+    combined_total:0, combined_l2_met:0, combined_converted:0, combined_converted_met:0,
   };
   Object.values(tree).forEach(zm => {
     const m = zm.metrics[currentPeriod];
     if(!m) return;
     totals.hot_total += m.hot_total || 0;
-    totals.hot_mgr += m.hot_mgr || 0;
-    totals.hp_converted += m.hp_converted || 0;
-    totals.hp_converted_met += m.hp_converted_met || 0;
     totals.hp_tp_sum_met += m.hp_tp_sum_met || 0;
     totals.hp_tp_over_200 += m.hp_tp_over_200 || 0;
     totals.total_meet += m.total_meet || 0;
     totals.working_days += m.working_days || 0;
     totals.sales_count += m.sales_count || 0;
     totals.sales_value += m.sales_value || 0;
-    totals.hl_assigned += m.hl_assigned || 0;
-    totals.hl_l2_met += m.hl_l2_met || 0;
-    totals.hl_converted += m.hl_converted || 0;
-    totals.hl_converted_met += m.hl_converted_met || 0;
+    totals.combined_total += m.combined_total || 0;
+    totals.combined_l2_met += m.combined_l2_met || 0;
+    totals.combined_converted += m.combined_converted || 0;
+    totals.combined_converted_met += m.combined_converted_met || 0;
   });
 
-  // Combined figures: Hot Prospects + Top 3 HL, added together per stage.
-  const combinedTotal = totals.hot_total + totals.hl_assigned;
-  const combinedL2Met = totals.hot_mgr + totals.hl_l2_met;
-  const combinedConverted = totals.hp_converted + totals.hl_converted;
-  const combinedConvertedMet = totals.hp_converted_met + totals.hl_converted_met;
+  // These now come directly from the backend as deduplicated unique-lead
+  // counts (a lead that's both Hot and HL is counted once, not twice).
+  const combinedTotal = totals.combined_total;
+  const combinedL2Met = totals.combined_l2_met;
+  const combinedConverted = totals.combined_converted;
+  const combinedConvertedMet = totals.combined_converted_met;
 
   const stages = [
     { label: 'Hot Prospects / Top 3 HL', value: combinedTotal, pct: null },
