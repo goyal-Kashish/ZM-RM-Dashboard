@@ -249,10 +249,8 @@ function computeMonthLabels(){
   const now = new Date();
   const labels = {wtd:'WTD'};
   labels.mtd = monthNames[now.getMonth()];
-  for(let i=1;i<=4;i++){
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    labels['m'+i] = monthNames[d.getMonth()];
-  }
+  const d1 = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  labels.m1 = monthNames[d1.getMonth()];
   return labels;
 }
 const PERIOD_LABELS = computeMonthLabels();
@@ -395,6 +393,7 @@ function sumChildMetrics(children){
   for(const period of allPeriods){
     const agg = { sales_count:0, sales_value:0, total_meet:0 };
     let hasHot = false;
+    let hasFunnel = false;
     Object.values(children).forEach(child => {
       const m = child.metrics[period];
       if(!m) return;
@@ -406,6 +405,13 @@ function sumChildMetrics(children){
         agg.hot_total = (agg.hot_total||0) + (m.hot_total||0);
         agg.hot_self = (agg.hot_self||0) + (m.hot_self||0);
         agg.hot_mgr = (agg.hot_mgr||0) + (m.hot_mgr||0);
+      }
+      if('hp_converted' in m){
+        hasFunnel = true;
+        agg.hp_converted = (agg.hp_converted||0) + (m.hp_converted||0);
+        agg.hp_tp_sum_met = (agg.hp_tp_sum_met||0) + (m.hp_tp_sum_met||0);
+        agg.hp_tp_over_200 = (agg.hp_tp_over_200||0) + (m.hp_tp_over_200||0);
+        agg.working_days = (agg.working_days||0) + (m.working_days||0);
       }
     });
     metrics[period] = agg;
