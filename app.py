@@ -17,6 +17,37 @@ app = Flask(__name__, static_folder="static", static_url_path="")
 PUSH_TOKEN = os.environ.get("PUSH_TOKEN", "")
 DASHBOARD_TITLE = os.environ.get("DASHBOARD_TITLE", "ZM / RM / Location Performance")
 
+# --- Password protection for the dashboard itself ---
+# Uses a single shared username/password via the browser's built-in login
+# prompt (HTTP Basic Auth) -- not a custom login page, but simple and secure
+# over HTTPS (which Render provides by default).
+#
+# The two push endpoints (/api/push-data, /api/push-location-sales) are
+# deliberately EXCLUDED from this check -- those are called by push_local.py,
+# an automated script with no browser and no way to type a password. They
+# already have their own protection via PUSH_TOKEN, checked separately in
+# each of those routes below.
+DASHBOARD_USERNAME = os.environ.get("DASHBOARD_USERNAME", "")
+DASHBOARD_PASSWORD = os.environ.get("DASHBOARD_PASSWORD", "")
+_PUSH_ONLY_PATHS = {"/api/push-data", "/api/push-location-sales"}
+
+
+@app.before_request
+def _require_dashboard_login():
+    if request.path in _PUSH_ONLY_PATHS:
+        return None
+    if not DASHBOARD_USERNAME or not DASHBOARD_PASSWORD:
+        return None  # not configured yet -- don't accidentally lock everyone out
+    auth = request.authorization
+    if not auth or auth.username != DASHBOARD_USERNAME or auth.password != DASHBOARD_PASSWORD:
+        return Response(
+            "Login required to view this dashboard.",
+            401,
+            {"WWW-Authenticate": 'Basic realm="ZM/RM/Location Dashboard"'},
+        )
+    return None
+
+
 HIERARCHY_FILE = os.path.join(os.path.dirname(__file__), "hierarchy_upload.xlsx")
 HIERARCHY_CACHE_FILE = os.path.join(os.path.dirname(__file__), "hierarchy_cache.json")
 REDASH_CACHE_FILE = os.path.join(os.path.dirname(__file__), "redash_cache.json")
