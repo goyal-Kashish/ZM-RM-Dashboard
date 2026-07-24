@@ -110,6 +110,26 @@
   .depth-1 .name-cell{ padding-left:20px; }
   .depth-2 .name-cell{ padding-left:40px; }
   .depth-3 .name-cell{ padding-left:60px; font-weight:400; }
+
+  /* Employee-level sub-table — distinct column set from the ZM/RM/Location rollup rows above it */
+  .emp-table{ border-top:1px solid var(--hairline); }
+  .emp-header, .emp-row{
+    display:grid;
+    grid-template-columns: 1.6fr 1.2fr 60px 65px 60px 55px 70px 75px 65px;
+    gap:6px; padding:7px 14px 7px 60px; align-items:center;
+  }
+  .emp-header{
+    background:var(--panel-2); font-size:9.5px; text-transform:uppercase; letter-spacing:0.03em;
+    color:var(--muted); font-weight:600; border-bottom:1px solid var(--hairline);
+  }
+  .emp-row{ font-size:12.5px; border-bottom:1px solid #EEF0F2; cursor:pointer; }
+  .emp-row:hover{ background:var(--navy-soft); }
+  .emp-row.dimmed{ opacity:0.35; }
+  .emp-row .emp-num{ text-align:right; font-family:Consolas,monospace; font-variant-numeric:tabular-nums; }
+  .emp-row .emp-name{ display:flex; align-items:center; gap:6px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .emp-row .emp-name:hover{ color:var(--navy); text-decoration:underline; }
+  .emp-row .emp-manager{ color:var(--muted); font-size:11.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
   .depth-3{ cursor:pointer; }
   .depth-3:hover .name-cell{ color:var(--navy); text-decoration:underline; }
   .flag-badge{
@@ -641,13 +661,30 @@ function renderTree(){
 
             if(locOpen){
               const emps = [...locNode.employees].sort((a,b) => (b.flagged - a.flagged));
+              html += `<div class="emp-table">
+                <div class="emp-header">
+                  <div>Name</div><div>Manager</div><div class="emp-num">Tenure</div>
+                  <div class="emp-num">Sales #</div><div class="emp-num">HP/HL</div>
+                  <div class="emp-num">Self</div><div class="emp-num">With Mgr</div>
+                  <div class="emp-num">Total Meet</div><div class="emp-num">Fresh %</div>
+                </div>`;
               for(const emp of emps){
                 const empDim = searching && !matches(loc) && !matches(rm) && !matches(zm) && !matches(emp.name);
-                html += `<div class="tree-row depth-3 ${empDim?'dimmed':''}" data-employee="${escAttr(emp.id)}">
-                  <div class="name-cell">${highlightMatch(emp.name || emp.id)} ${emp.flagged ? '<span class="flag-badge">LOW</span>' : ''}</div>
-                  <div class="num"></div><div class="num"></div><div class="num"></div><div class="num"></div><div class="num"></div><div class="num"></div>
+                const m = (emp.metrics && emp.metrics[currentPeriod]) || {};
+                const selfCount = (m.combined_total || 0) - (m.combined_l2_met || 0);
+                html += `<div class="emp-row ${empDim?'dimmed':''}" data-employee="${escAttr(emp.id)}">
+                  <div class="emp-name">${highlightMatch(emp.name || emp.id)}${emp.flagged ? ' <span class="flag-badge">LOW</span>' : ''}</div>
+                  <div class="emp-manager">${escHtml(emp.manager_name || '—')}</div>
+                  <div class="emp-num">${fmtNum(emp.tenure)}</div>
+                  <div class="emp-num">${fmtNum(m.sales_count)}</div>
+                  <div class="emp-num">${fmtNum(m.combined_total)}</div>
+                  <div class="emp-num">${fmtNum(selfCount)}</div>
+                  <div class="emp-num">${fmtNum(m.combined_l2_met)}</div>
+                  <div class="emp-num">${fmtNum(m.total_meet)}</div>
+                  <div class="emp-num">${fmtPctSimple(m.fresh_meet, m.total_meet)}</div>
                 </div>`;
               }
+              html += `</div>`;
             }
           }
         }

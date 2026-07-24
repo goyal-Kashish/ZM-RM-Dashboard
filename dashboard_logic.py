@@ -22,14 +22,14 @@ METRIC_FIELDS = {
     "overall": {
         "sales_count": "sales_done", "sales_value": "annual_sale_done",
         "hot_total": "l1_hot_glids", "hot_self": "l1_hot_self_meet", "hot_mgr": "l1_hot_with_mgr_meet",
-        "total_meet": "total_meet",
+        "total_meet": "total_meet", "fresh_meet": "fresh_meet",
         "hp_converted": None, "hp_converted_met": None, "hp_tp_sum_met": None, "hp_tp_over_200": None, "working_days": None,
         "combined_total": None, "combined_l2_met": None, "combined_converted": None, "combined_converted_met": None,
     },
     "wtd": {
         "sales_count": "week_sales_done", "sales_value": "annual_week_sale_done",
         "hot_total": "l1_hot_glids_wtd", "hot_self": "l1_hot_self_meet_wtd", "hot_mgr": "l1_hot_with_mgr_meet_wtd",
-        "total_meet": "total_meet_wtd",
+        "total_meet": "total_meet_wtd", "fresh_meet": "fresh_meet_wtd",
         "hp_converted": "l1_hot_converted_wtd", "hp_converted_met": "l1_hot_converted_met_wtd",
         "hp_tp_sum_met": "l1_hot_tp_sum_met_wtd",
         "hp_tp_over_200": "l1_hot_tp_over_200_count_wtd", "working_days": "working_days_wtd",
@@ -39,7 +39,7 @@ METRIC_FIELDS = {
     "mtd": {
         "sales_count": "month_sales_done", "sales_value": "annual_month_sale_done",
         "hot_total": "l1_hot_glids_mtd", "hot_self": "l1_hot_self_meet_mtd", "hot_mgr": "l1_hot_with_mgr_meet_mtd",
-        "total_meet": "total_meet_mtd",
+        "total_meet": "total_meet_mtd", "fresh_meet": "fresh_meet_mtd",
         "hp_converted": "l1_hot_converted_mtd", "hp_converted_met": "l1_hot_converted_met_mtd",
         "hp_tp_sum_met": "l1_hot_tp_sum_met_mtd",
         "hp_tp_over_200": "l1_hot_tp_over_200_count_mtd", "working_days": "working_days_mtd",
@@ -49,7 +49,7 @@ METRIC_FIELDS = {
     "m1": {
         "sales_count": "sales_done_m1", "sales_value": "annual_sale_done_m1",
         "hot_total": "l1_hot_glids_m1", "hot_self": "l1_hot_self_meet_m1", "hot_mgr": "l1_hot_with_mgr_meet_m1",
-        "total_meet": "total_meet_m1",
+        "total_meet": "total_meet_m1", "fresh_meet": "fresh_meet_m1",
         "hp_converted": "l1_hot_converted_m1", "hp_converted_met": "l1_hot_converted_met_m1",
         "hp_tp_sum_met": "l1_hot_tp_sum_met_m1",
         "hp_tp_over_200": "l1_hot_tp_over_200_count_m1", "working_days": "working_days_m1",
@@ -59,21 +59,21 @@ METRIC_FIELDS = {
     "m2": {
         "sales_count": "sales_done_m2", "sales_value": "annual_sale_done_m2",
         "hot_total": None, "hot_self": None, "hot_mgr": None,
-        "total_meet": "total_meet_m2",
+        "total_meet": "total_meet_m2", "fresh_meet": "fresh_meet_m2",
         "hp_converted": None, "hp_converted_met": None, "hp_tp_sum_met": None, "hp_tp_over_200": None, "working_days": None,
         "combined_total": None, "combined_l2_met": None, "combined_converted": None, "combined_converted_met": None,
     },
     "m3": {
         "sales_count": "sales_done_m3", "sales_value": "annual_sale_done_m3",
         "hot_total": None, "hot_self": None, "hot_mgr": None,
-        "total_meet": "total_meet_m3",
+        "total_meet": "total_meet_m3", "fresh_meet": "fresh_meet_m3",
         "hp_converted": None, "hp_converted_met": None, "hp_tp_sum_met": None, "hp_tp_over_200": None, "working_days": None,
         "combined_total": None, "combined_l2_met": None, "combined_converted": None, "combined_converted_met": None,
     },
     "m4": {
         "sales_count": "sales_done_m4", "sales_value": "annual_sale_done_m4",
         "hot_total": None, "hot_self": None, "hot_mgr": None,
-        "total_meet": "total_meet_m4",
+        "total_meet": "total_meet_m4", "fresh_meet": "fresh_meet_m4",
         "hp_converted": None, "hp_converted_met": None, "hp_tp_sum_met": None, "hp_tp_over_200": None, "working_days": None,
         "combined_total": None, "combined_l2_met": None, "combined_converted": None, "combined_converted_met": None,
     },
@@ -198,6 +198,30 @@ def tree_payload(result):
     }
 
 
+EMPLOYEE_SUMMARY_PERIODS = ["wtd", "mtd", "m1"]
+
+
+def build_employee_summary(row):
+    """Small per-employee summary used in the tree's employee sub-table --
+    only the handful of fields needed there, not the full raw row (which
+    stays server-side, fetched on-demand per employee via /api/employee)."""
+    summary = {
+        "manager_name": row.get("manager_name"),
+        "tenure": _num(row, "tenure"),
+        "metrics": {},
+    }
+    for period in EMPLOYEE_SUMMARY_PERIODS:
+        fields = METRIC_FIELDS[period]
+        summary["metrics"][period] = {
+            "sales_count": _num(row, fields["sales_count"]) or 0,
+            "combined_total": _num(row, fields["combined_total"]) or 0,
+            "combined_l2_met": _num(row, fields["combined_l2_met"]) or 0,
+            "total_meet": _num(row, fields["total_meet"]) or 0,
+            "fresh_meet": _num(row, fields["fresh_meet"]) or 0,
+        }
+    return summary
+
+
 def merge_and_build_tree(redash_rows, hierarchy_map):
     """
     redash_rows: list of dicts (one per employee, full raw Redash row)
@@ -255,6 +279,7 @@ def merge_and_build_tree(redash_rows, hierarchy_map):
                             "id": normalize_id(r.get(EMPLOYEE_ID_FIELD)),
                             "name": r.get(EMPLOYEE_NAME_FIELD),
                             "flagged": normalize_id(r.get(EMPLOYEE_ID_FIELD)) in {normalize_id(x) for x in flagged_ids},
+                            **build_employee_summary(r),
                         }
                         for r in rows
                     ],
