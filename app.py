@@ -294,14 +294,21 @@ def get_computed(vertical="all"):
             hmap = _state["hierarchy_map"] or {}
             rows = filter_rows_by_vertical(_state["redash_rows"], key)
             computed = merge_and_build_tree(rows, hmap)
-            # Authoritative location sales has no vertical breakdown, so only
-            # apply it to the unfiltered (All Verticals) view — applying an
-            # all-verticals total onto a vertical-filtered view would be wrong.
+            # Authoritative location sales has no vertical breakdown, so this
+            # total always reflects ALL verticals combined -- even when a
+            # specific vertical is selected here. That's intentional: some
+            # sales are attributed directly to L3 (branch managers), which
+            # never appear in the L1-sourced employee breakdown at all, so
+            # the breakdown's sum and this top-level total are allowed to
+            # disagree by design.
             computed["ambiguous_locations"] = []
-            if key == "all" and _state["location_sales_rows"]:
-                computed["ambiguous_locations"] = apply_authoritative_location_sales(
+            computed["unmatched_locations"] = []
+            if _state["location_sales_rows"]:
+                overlay_result = apply_authoritative_location_sales(
                     computed["tree"], _state["location_sales_rows"]
                 )
+                computed["ambiguous_locations"] = overlay_result["ambiguous"]
+                computed["unmatched_locations"] = overlay_result["unmatched"]
             cache[key] = computed
         return cache[key]
 
@@ -337,6 +344,7 @@ def api_dashboard_data():
         payload["location_sales_pushed_at"] = _state["location_sales_pushed_at"]
         payload["location_sales_row_count"] = len(_state["location_sales_rows"] or [])
         payload["ambiguous_locations"] = computed.get("ambiguous_locations", [])
+        payload["unmatched_locations"] = computed.get("unmatched_locations", [])
         payload["served_at"] = time.time()
         payload["selected_vertical"] = vertical
         payload["available_verticals"] = get_available_verticals(_state["redash_rows"])

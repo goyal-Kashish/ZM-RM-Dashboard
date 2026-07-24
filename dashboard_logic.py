@@ -347,13 +347,18 @@ def apply_authoritative_location_sales(tree, location_sales_rows):
     """Overwrite each Location node's WTD/MTD/M1 sales_count/sales_value with
     the authoritative per-location numbers, matched on iil_comp_loc_name, then
     recompute RM and ZM rollups from the corrected location figures. Mutates
-    `tree` in place. Returns the list of location names that were skipped
-    because the same name appears under more than one RM branch (ambiguous —
-    applying the same authoritative total to each occurrence would double-count
-    it at the rollup level, so those locations keep their employee-summed
-    numbers instead)."""
+    `tree` in place. Returns a dict with two lists:
+      - "ambiguous": location names skipped because the same name appears
+        under more than one RM branch (applying the same authoritative total
+        to each would double-count it at rollup level).
+      - "unmatched": location names present in the tree that were NOT found
+        anywhere in the location-sales query's own data at all -- these keep
+        their old employee-summed number too, silently, unless surfaced here.
+        Usually means the location name is spelled/formatted differently
+        between the two Redash queries.
+    """
     if not location_sales_rows:
-        return []
+        return {"ambiguous": [], "unmatched": []}
 
     loc_lookup = {}
     for row in location_sales_rows:
@@ -380,6 +385,7 @@ def apply_authoritative_location_sales(tree, location_sales_rows):
         name for name, count in location_occurrence_count.items() if count > 1
     )
     ambiguous_set = set(ambiguous_locations)
+    unmatched_set = set()
 
     for zm_node in tree.values():
         for rm_node in zm_node["rm_children"].values():
@@ -388,6 +394,7 @@ def apply_authoritative_location_sales(tree, location_sales_rows):
                     continue  # keep employee-summed number; unsafe to overlay
                 authoritative = loc_lookup.get(loc_name)
                 if not authoritative:
+                    unmatched_set.add(loc_name)
                     continue
                 for period, vals in authoritative.items():
                     loc_node["metrics"][period]["sales_count"] = vals["sales_count"]
@@ -395,4 +402,4 @@ def apply_authoritative_location_sales(tree, location_sales_rows):
             _recompute_parent_sales(rm_node, rm_node["location_children"].values())
         _recompute_parent_sales(zm_node, zm_node["rm_children"].values())
 
-    return ambiguous_locations
+    return {"ambiguous": ambiguous_locations, "unmatched": sorted(unmatched_set)}
