@@ -467,7 +467,13 @@ function metricCells(metrics, period){
   const showHot = hasHotFields(period);
   const cells = [ fmtNum(metrics.sales_count) ];
   if(showHot){
-    cells.push(fmtNum(metrics.hot_total), fmtNum(metrics.hot_self), fmtNum(metrics.hot_mgr));
+    // Uses the deduplicated combined Hot Prospect + Top 3 HL total (a lead
+    // counted once even if it's both), matching the funnel above and the
+    // employee-level HP/HL column — not the old Hot-Prospect-only figure.
+    const combinedTotal = metrics.combined_total || 0;
+    const combinedL2Met = metrics.combined_l2_met || 0;
+    const combinedSelf = combinedTotal - combinedL2Met;
+    cells.push(fmtNum(combinedTotal), fmtNum(combinedSelf), fmtNum(combinedL2Met));
   } else {
     cells.push('<span class="empty-cell">—</span>','<span class="empty-cell">—</span>','<span class="empty-cell">—</span>');
   }
@@ -615,9 +621,9 @@ function renderTree(){
   html += `<div class="tree-header">
     <div>Name</div><div class="num">HC</div>
     <div class="num">Sales #</div>
-    <div class="num">${showHot ? 'Hot Total' : 'Meetings'}</div>
-    <div class="num">${showHot ? 'Hot Self' : ''}</div>
-    <div class="num">${showHot ? 'Hot Mgr' : ''}</div>
+    <div class="num">${showHot ? 'HP/HL' : 'Meetings'}</div>
+    <div class="num">${showHot ? 'Self' : ''}</div>
+    <div class="num">${showHot ? 'With Mgr' : ''}</div>
     <div class="num">${showHot ? 'Total Meet' : ''}</div>
   </div>`;
 
