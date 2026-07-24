@@ -882,7 +882,7 @@ async function fetchDashboard(force){
       hierarchyStatusEl.textContent += ` (${payload.unmapped_count} unmapped)`;
     }
     if(payload.ambiguous_locations && payload.ambiguous_locations.length > 0){
-      hierarchyStatusEl.textContent += ` — ⚠ ${payload.ambiguous_locations.length} location(s) appear under multiple RMs, using summed figures for those: ${payload.ambiguous_locations.slice(0,5).join(', ')}${payload.ambiguous_locations.length > 5 ? '…' : ''}`;
+      hierarchyStatusEl.textContent += ` — ⚠ ${payload.ambiguous_locations.length} location(s) appear under multiple RMs, assigned to whichever RM has the most people there: ${payload.ambiguous_locations.slice(0,5).join(', ')}${payload.ambiguous_locations.length > 5 ? '…' : ''}`;
     }
     if(payload.unmatched_locations && payload.unmatched_locations.length > 0){
       hierarchyStatusEl.textContent += ` — ⚠ ${payload.unmatched_locations.length} location(s) not found in the location-sales query (name mismatch?), still using summed figures for those: ${payload.unmatched_locations.slice(0,5).join(', ')}${payload.unmatched_locations.length > 5 ? '…' : ''}`;

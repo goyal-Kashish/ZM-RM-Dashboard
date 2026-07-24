@@ -347,13 +347,22 @@ def apply_authoritative_location_sales(tree, location_sales_rows):
     """Overwrite each Location node's WTD/MTD/M1 sales_count/sales_value with
     the authoritative per-location numbers, matched on iil_comp_loc_name, then
     recompute RM and ZM rollups from the corrected location figures. Mutates
-    `tree` in place. Returns a dict with two lists:
-      - "ambiguous": location names skipped because the same name appears
-        under more than one RM branch (applying the same authoritative total
-        to each would double-count it at rollup level).
+    `tree` in place.
+
+    When the same location name appears under more than one RM branch, the
+    authoritative total goes to whichever occurrence has the most L1
+    employees mapped to it (treated as that location's "true" RM) — every
+    other occurrence of the same name gets set to 0 rather than left on its
+    old employee-summed guess, since the true total is already fully
+    assigned elsewhere and adding anything more would double-count it.
+
+    Returns a dict with two lists:
+      - "ambiguous": location names that appeared under more than one RM
+        branch (informational — the majority-headcount one still got the
+        real number; only flagged so you can sanity-check the split).
       - "unmatched": location names present in the tree that were NOT found
         anywhere in the location-sales query's own data at all -- these keep
-        their old employee-summed number too, silently, unless surfaced here.
+        their old employee-summed number, silently, unless surfaced here.
         Usually means the location name is spelled/formatted differently
         between the two Redash queries.
     """
@@ -373,32 +382,45 @@ def apply_authoritative_location_sales(tree, location_sales_rows):
             for period, fields in LOCATION_SALES_PERIOD_FIELDS.items()
         }
 
-    # First pass: count how many (zm, rm) branches each location name appears
-    # under, anywhere in the tree, so we can detect ambiguous ones up front.
-    location_occurrence_count = defaultdict(int)
+    # First pass: gather every (zm, rm, location) occurrence of each location
+    # name, so we can detect which ones are ambiguous (appear under >1 RM)
+    # and, for those, which specific occurrence has the most L1 employees.
+    occurrences = defaultdict(list)
     for zm_node in tree.values():
         for rm_node in zm_node["rm_children"].values():
-            for loc_name in rm_node["location_children"]:
-                location_occurrence_count[loc_name] += 1
+            for loc_name, loc_node in rm_node["location_children"].items():
+                occurrences[loc_name].append(loc_node)
 
-    ambiguous_locations = sorted(
-        name for name, count in location_occurrence_count.items() if count > 1
-    )
-    ambiguous_set = set(ambiguous_locations)
+    ambiguous_locations = sorted(name for name, occ in occurrences.items() if len(occ) > 1)
+    majority_node_by_name = {
+        name: max(occurrences[name], key=lambda n: n["headcount"])
+        for name in ambiguous_locations
+    }
     unmatched_set = set()
 
     for zm_node in tree.values():
         for rm_node in zm_node["rm_children"].values():
             for loc_name, loc_node in rm_node["location_children"].items():
-                if loc_name in ambiguous_set:
-                    continue  # keep employee-summed number; unsafe to overlay
                 authoritative = loc_lookup.get(loc_name)
-                if not authoritative:
-                    unmatched_set.add(loc_name)
-                    continue
-                for period, vals in authoritative.items():
-                    loc_node["metrics"][period]["sales_count"] = vals["sales_count"]
-                    loc_node["metrics"][period]["sales_value"] = vals["sales_value"]
+                is_ambiguous = loc_name in majority_node_by_name
+                is_majority_occurrence = is_ambiguous and majority_node_by_name[loc_name] is loc_node
+
+                if authoritative is None:
+                    if not is_ambiguous or is_majority_occurrence:
+                        unmatched_set.add(loc_name)
+                    continue  # no authoritative data at all; leave old number as-is
+
+                if is_ambiguous and not is_majority_occurrence:
+                    # Minority occurrence of an ambiguous name: the true total
+                    # is already fully assigned to the majority occurrence,
+                    # so this one gets 0 rather than double-counting.
+                    for period in authoritative:
+                        loc_node["metrics"][period]["sales_count"] = 0
+                        loc_node["metrics"][period]["sales_value"] = 0
+                else:
+                    for period, vals in authoritative.items():
+                        loc_node["metrics"][period]["sales_count"] = vals["sales_count"]
+                        loc_node["metrics"][period]["sales_value"] = vals["sales_value"]
             _recompute_parent_sales(rm_node, rm_node["location_children"].values())
         _recompute_parent_sales(zm_node, zm_node["rm_children"].values())
 
