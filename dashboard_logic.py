@@ -343,18 +343,39 @@ def _recompute_parent_sales(parent_node, children):
         )
 
 
-def apply_authoritative_location_sales(tree, location_sales_rows):
+def compute_company_headcount_by_rm_location(full_tree):
+    """Company-wide (ALL verticals combined) headcount for every (rm_name,
+    location_name) pair. Used to consistently decide which RM 'truly owns'
+    an ambiguous location, independent of which vertical filter is currently
+    being viewed — computed once from the complete, unfiltered population."""
+    result = {}
+    for zm_node in full_tree.values():
+        for rm_name, rm_node in zm_node["rm_children"].items():
+            for loc_name, loc_node in rm_node["location_children"].items():
+                result[(rm_name, loc_name)] = loc_node["headcount"]
+    return result
+
+
+def apply_authoritative_location_sales(tree, location_sales_rows, company_headcount_by_rm_location):
     """Overwrite each Location node's WTD/MTD/M1 sales_count/sales_value with
     the authoritative per-location numbers, matched on iil_comp_loc_name, then
     recompute RM and ZM rollups from the corrected location figures. Mutates
     `tree` in place.
 
-    When the same location name appears under more than one RM branch, the
-    authoritative total goes to whichever occurrence has the most L1
-    employees mapped to it (treated as that location's "true" RM) — every
-    other occurrence of the same name gets set to 0 rather than left on its
-    old employee-summed guess, since the true total is already fully
-    assigned elsewhere and adding anything more would double-count it.
+    When the same location name appears under more than one RM branch (within
+    whichever vertical-filtered tree is passed in here), the authoritative
+    total goes to whichever occurrence has the highest COMPANY-WIDE headcount
+    (via `company_headcount_by_rm_location`, computed once from the full,
+    unfiltered population) — NOT the headcount within this filtered view.
+    This matters: two RMs sharing a location can have very different
+    vertical mixes, so "who has more people here" can flip between vertical
+    views if computed per-view, silently reassigning (and zeroing out) real
+    data depending on which vertical someone happens to be looking at. Using
+    a single, vertical-independent reference keeps the assignment consistent
+    everywhere. Every other occurrence of the same name gets set to 0 rather
+    than left on its old employee-summed guess, since the true total is
+    already fully assigned elsewhere and adding anything more would
+    double-count it.
 
     Returns a dict with two lists:
       - "ambiguous": location names that appeared under more than one RM
@@ -382,20 +403,29 @@ def apply_authoritative_location_sales(tree, location_sales_rows):
             for period, fields in LOCATION_SALES_PERIOD_FIELDS.items()
         }
 
-    # First pass: gather every (zm, rm, location) occurrence of each location
-    # name, so we can detect which ones are ambiguous (appear under >1 RM)
-    # and, for those, which specific occurrence has the most L1 employees.
+    # Gather every (rm_name, loc_node) occurrence PRESENT in this (possibly
+    # vertical-filtered) tree, for each location name.
     occurrences = defaultdict(list)
     for zm_node in tree.values():
-        for rm_node in zm_node["rm_children"].values():
+        for rm_name, rm_node in zm_node["rm_children"].items():
             for loc_name, loc_node in rm_node["location_children"].items():
-                occurrences[loc_name].append(loc_node)
+                occurrences[loc_name].append((rm_name, loc_node))
 
     ambiguous_locations = sorted(name for name, occ in occurrences.items() if len(occ) > 1)
-    majority_node_by_name = {
-        name: max(occurrences[name], key=lambda n: n["headcount"])
-        for name in ambiguous_locations
-    }
+
+    # Pick the majority occurrence using company-wide headcount, but only
+    # among occurrences actually present in THIS view — if the company-wide
+    # majority RM has zero employees in the current vertical (so it doesn't
+    # even appear here), whichever occurrence IS present just gets treated
+    # as majority, rather than everything present getting zeroed out.
+    majority_node_by_name = {}
+    for loc_name in ambiguous_locations:
+        occ_list = occurrences[loc_name]
+        majority_node_by_name[loc_name] = max(
+            occ_list,
+            key=lambda t: company_headcount_by_rm_location.get((t[0], loc_name), t[1]["headcount"]),
+        )[1]
+
     unmatched_set = set()
 
     for zm_node in tree.values():

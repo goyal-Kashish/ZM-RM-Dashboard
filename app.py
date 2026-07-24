@@ -6,7 +6,7 @@ import gzip
 from flask import Flask, jsonify, send_from_directory, request, Response
 from threading import Lock
 
-from dashboard_logic import merge_and_build_tree, tree_payload, normalize_id, apply_authoritative_location_sales
+from dashboard_logic import merge_and_build_tree, tree_payload, normalize_id, apply_authoritative_location_sales, compute_company_headcount_by_rm_location
 
 app = Flask(__name__, static_folder="static", static_url_path="")
 
@@ -63,6 +63,7 @@ _state = {
     "hierarchy_uploaded_at": 0,
     "hierarchy_row_count": 0,
     "computed_by_vertical": {},  # cached merge_and_build_tree() results, keyed by vertical filter
+    "_company_headcount_by_rm_location": None,  # cached vertical-independent headcount lookup
 }
 
 
@@ -148,6 +149,7 @@ def push_data():
         _state["redash_rows"] = rows
         _state["redash_pushed_at"] = time.time()
         _state["computed_by_vertical"] = {}  # invalidate merged cache
+        _state["_company_headcount_by_rm_location"] = None  # invalidate too
         _save_redash_cache()
 
     return jsonify({"ok": True, "row_count": len(rows), "pushed_at": _state["redash_pushed_at"]})
@@ -173,6 +175,7 @@ def push_location_sales():
         _state["location_sales_rows"] = rows
         _state["location_sales_pushed_at"] = time.time()
         _state["computed_by_vertical"] = {}  # invalidate merged cache
+        _state["_company_headcount_by_rm_location"] = None  # invalidate too
         _save_location_sales_cache()
 
     return jsonify({"ok": True, "row_count": len(rows), "pushed_at": _state["location_sales_pushed_at"]})
@@ -235,6 +238,7 @@ def upload_hierarchy():
         _state["hierarchy_uploaded_at"] = time.time()
         _state["hierarchy_row_count"] = len(hierarchy_map)
         _state["computed_by_vertical"] = {}  # invalidate merged cache
+        _state["_company_headcount_by_rm_location"] = None  # invalidate too
         _save_hierarchy_cache()
         try:
             with open(HIERARCHY_FILE, "wb") as out:
@@ -290,6 +294,17 @@ def get_computed(vertical="all"):
             return None
         cache = _state.setdefault("computed_by_vertical", {})
         key = vertical or "all"
+
+        # Company-wide (all-vertical) headcount per (RM, location) — needed
+        # so an ambiguous location's "true" RM is decided the same way no
+        # matter which vertical someone is currently viewing. Computed once
+        # from the full, unfiltered population and cached until the next
+        # push or hierarchy update invalidates it.
+        if _state.get("_company_headcount_by_rm_location") is None:
+            hmap = _state["hierarchy_map"] or {}
+            full_tree = merge_and_build_tree(_state["redash_rows"], hmap)["tree"]
+            _state["_company_headcount_by_rm_location"] = compute_company_headcount_by_rm_location(full_tree)
+
         if key not in cache:
             hmap = _state["hierarchy_map"] or {}
             rows = filter_rows_by_vertical(_state["redash_rows"], key)
@@ -305,7 +320,8 @@ def get_computed(vertical="all"):
             computed["unmatched_locations"] = []
             if _state["location_sales_rows"]:
                 overlay_result = apply_authoritative_location_sales(
-                    computed["tree"], _state["location_sales_rows"]
+                    computed["tree"], _state["location_sales_rows"],
+                    _state["_company_headcount_by_rm_location"],
                 )
                 computed["ambiguous_locations"] = overlay_result["ambiguous"]
                 computed["unmatched_locations"] = overlay_result["unmatched"]
