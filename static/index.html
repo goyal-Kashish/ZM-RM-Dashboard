@@ -129,6 +129,9 @@
   .emp-row .emp-name{ display:flex; align-items:center; gap:6px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .emp-row .emp-name:hover{ color:var(--navy); text-decoration:underline; }
   .emp-row .emp-manager{ color:var(--muted); font-size:11.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .emp-manager-row{ background:var(--panel-2); font-weight:700; cursor:default; }
+  .emp-manager-row:hover{ background:var(--panel-2); }
+  .emp-manager-row .emp-name{ color:var(--navy); }
 
   .depth-3{ cursor:pointer; }
   .depth-3:hover .name-cell{ color:var(--navy); text-decoration:underline; }
@@ -660,7 +663,17 @@ function renderTree(){
             </div>`;
 
             if(locOpen){
-              const emps = [...locNode.employees].sort((a,b) => (b.flagged - a.flagged));
+              // Group employees by their manager (L2), each group gets a
+              // summary row (aggregated across that manager's team) followed
+              // by that manager's individual L1s, sorted by name.
+              const byManager = new Map();
+              for(const emp of locNode.employees){
+                const mgr = emp.manager_name || '(No Manager)';
+                if(!byManager.has(mgr)) byManager.set(mgr, []);
+                byManager.get(mgr).push(emp);
+              }
+              const managerNames = [...byManager.keys()].sort((a,b) => a.localeCompare(b));
+
               html += `<div class="emp-table">
                 <div class="emp-header">
                   <div>Name</div><div>Manager</div><div class="emp-num">Tenure</div>
@@ -668,21 +681,50 @@ function renderTree(){
                   <div class="emp-num">Self</div><div class="emp-num">With Mgr</div>
                   <div class="emp-num">Total Meet</div><div class="emp-num">Fresh %</div>
                 </div>`;
-              for(const emp of emps){
-                const empDim = searching && !matches(loc) && !matches(rm) && !matches(zm) && !matches(emp.name);
-                const m = (emp.metrics && emp.metrics[currentPeriod]) || {};
-                const selfCount = (m.combined_total || 0) - (m.combined_l2_met || 0);
-                html += `<div class="emp-row ${empDim?'dimmed':''}" data-employee="${escAttr(emp.id)}">
-                  <div class="emp-name">${highlightMatch(emp.name || emp.id)}${emp.flagged ? ' <span class="flag-badge">LOW</span>' : ''}</div>
-                  <div class="emp-manager">${escHtml(emp.manager_name || '—')}</div>
-                  <div class="emp-num">${fmtNum(emp.tenure)}</div>
-                  <div class="emp-num">${fmtNum(m.sales_count)}</div>
-                  <div class="emp-num">${fmtNum(m.combined_total)}</div>
-                  <div class="emp-num">${fmtNum(selfCount)}</div>
-                  <div class="emp-num">${fmtNum(m.combined_l2_met)}</div>
-                  <div class="emp-num">${fmtNum(m.total_meet)}</div>
-                  <div class="emp-num">${fmtPctSimple(m.fresh_meet, m.total_meet)}</div>
+
+              for(const mgr of managerNames){
+                const teamList = [...byManager.get(mgr)].sort((a,b) => (a.name||'').localeCompare(b.name||''));
+
+                // Aggregate this manager's whole team for the summary row.
+                const agg = { sales_count:0, combined_total:0, combined_l2_met:0, total_meet:0, fresh_meet:0 };
+                teamList.forEach(emp => {
+                  const m = (emp.metrics && emp.metrics[currentPeriod]) || {};
+                  agg.sales_count += m.sales_count || 0;
+                  agg.combined_total += m.combined_total || 0;
+                  agg.combined_l2_met += m.combined_l2_met || 0;
+                  agg.total_meet += m.total_meet || 0;
+                  agg.fresh_meet += m.fresh_meet || 0;
+                });
+                const aggSelf = agg.combined_total - agg.combined_l2_met;
+
+                html += `<div class="emp-row emp-manager-row">
+                  <div class="emp-name">${highlightMatch(mgr)} <span class="headcount-pill">(${teamList.length})</span></div>
+                  <div class="emp-manager"></div>
+                  <div class="emp-num"></div>
+                  <div class="emp-num">${fmtNum(agg.sales_count)}</div>
+                  <div class="emp-num">${fmtNum(agg.combined_total)}</div>
+                  <div class="emp-num">${fmtNum(aggSelf)}</div>
+                  <div class="emp-num">${fmtNum(agg.combined_l2_met)}</div>
+                  <div class="emp-num">${fmtNum(agg.total_meet)}</div>
+                  <div class="emp-num">${fmtPctSimple(agg.fresh_meet, agg.total_meet)}</div>
                 </div>`;
+
+                for(const emp of teamList){
+                  const empDim = searching && !matches(loc) && !matches(rm) && !matches(zm) && !matches(emp.name);
+                  const m = (emp.metrics && emp.metrics[currentPeriod]) || {};
+                  const selfCount = (m.combined_total || 0) - (m.combined_l2_met || 0);
+                  html += `<div class="emp-row ${empDim?'dimmed':''}" data-employee="${escAttr(emp.id)}">
+                    <div class="emp-name">${highlightMatch(emp.name || emp.id)}</div>
+                    <div class="emp-manager">${escHtml(emp.manager_name || '—')}</div>
+                    <div class="emp-num">${fmtNum(emp.tenure)}</div>
+                    <div class="emp-num">${fmtNum(m.sales_count)}</div>
+                    <div class="emp-num">${fmtNum(m.combined_total)}</div>
+                    <div class="emp-num">${fmtNum(selfCount)}</div>
+                    <div class="emp-num">${fmtNum(m.combined_l2_met)}</div>
+                    <div class="emp-num">${fmtNum(m.total_meet)}</div>
+                    <div class="emp-num">${fmtPctSimple(m.fresh_meet, m.total_meet)}</div>
+                  </div>`;
+                }
               }
               html += `</div>`;
             }
