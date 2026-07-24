@@ -115,7 +115,7 @@
   .emp-table{ border-top:1px solid var(--hairline); }
   .emp-header, .emp-row{
     display:grid;
-    grid-template-columns: 1.6fr 1.2fr 60px 65px 60px 55px 70px 75px 65px;
+    grid-template-columns: 1.5fr 1.1fr 55px 60px 55px 50px 65px 70px 60px 80px;
     gap:6px; padding:7px 14px 7px 60px; align-items:center;
   }
   .emp-header{
@@ -680,6 +680,7 @@ function renderTree(){
                   <div class="emp-num">Sales #</div><div class="emp-num">HP/HL</div>
                   <div class="emp-num">Self</div><div class="emp-num">With Mgr</div>
                   <div class="emp-num">Total Meet</div><div class="emp-num">Fresh %</div>
+                  <div class="emp-num">Avg Talktime</div>
                 </div>`;
 
               for(const mgr of managerNames){
@@ -707,6 +708,7 @@ function renderTree(){
                   <div class="emp-num">${fmtNum(agg.combined_l2_met)}</div>
                   <div class="emp-num">${fmtNum(agg.total_meet)}</div>
                   <div class="emp-num">${fmtPctSimple(agg.fresh_meet, agg.total_meet)}</div>
+                  <div class="emp-num" title="Not averaged across the team — talktime needs raw seconds + call-days to combine correctly, which aren't exposed per-group. Shown per employee only.">—</div>
                 </div>`;
 
                 for(const emp of teamList){
@@ -723,6 +725,7 @@ function renderTree(){
                     <div class="emp-num">${fmtNum(m.combined_l2_met)}</div>
                     <div class="emp-num">${fmtNum(m.total_meet)}</div>
                     <div class="emp-num">${fmtPctSimple(m.fresh_meet, m.total_meet)}</div>
+                    <div class="emp-num">${escHtml(m.avg_talktime || '—')}</div>
                   </div>`;
                 }
               }

@@ -201,6 +201,13 @@ def tree_payload(result):
 EMPLOYEE_SUMMARY_PERIODS = ["wtd", "mtd", "m1"]
 
 
+TALKTIME_FIELD_BY_PERIOD = {
+    "wtd": "avg_tt_hhmmss_wtd",
+    "mtd": "avg_tt_hhmmss_mtd",
+    "m1": "avg_tt_hhmmss_m1",
+}
+
+
 def build_employee_summary(row):
     """Small per-employee summary used in the tree's employee sub-table --
     only the handful of fields needed there, not the full raw row (which
@@ -218,6 +225,7 @@ def build_employee_summary(row):
             "combined_l2_met": _num(row, fields["combined_l2_met"]) or 0,
             "total_meet": _num(row, fields["total_meet"]) or 0,
             "fresh_meet": _num(row, fields["fresh_meet"]) or 0,
+            "avg_talktime": row.get(TALKTIME_FIELD_BY_PERIOD[period]),
         }
     return summary
 
