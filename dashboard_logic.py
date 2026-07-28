@@ -245,8 +245,14 @@ def build_employee_summary(row):
         fields = METRIC_FIELDS[period]
         summary["metrics"][period] = {
             "sales_count": _num(row, fields["sales_count"]) or 0,
-            "combined_total": _num(row, fields["combined_total"]) or 0,
-            "combined_l2_met": _num(row, fields["combined_l2_met"]) or 0,
+            "hot_total": _num(row, fields["hot_total"]) or 0,
+            "hot_mgr": _num(row, fields["hot_mgr"]) or 0,
+            "hp_converted": _num(row, fields["hp_converted"]) or 0,
+            "hp_converted_met": _num(row, fields["hp_converted_met"]) or 0,
+            "hl_assigned": _num(row, fields["hl_assigned"]) or 0,
+            "hl_l2_met": _num(row, fields["hl_l2_met"]) or 0,
+            "hl_converted": _num(row, fields["hl_converted"]) or 0,
+            "hl_converted_met": _num(row, fields["hl_converted_met"]) or 0,
             "total_meet": _num(row, fields["total_meet"]) or 0,
             "fresh_meet": _num(row, fields["fresh_meet"]) or 0,
             "avg_talktime": row.get(TALKTIME_FIELD_BY_PERIOD[period]),
