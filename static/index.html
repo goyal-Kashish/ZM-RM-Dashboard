@@ -115,8 +115,8 @@
   .emp-table{ border-top:1px solid var(--hairline); }
   .emp-header, .emp-row{
     display:grid;
-    grid-template-columns: 1.3fr 55px 60px 55px 62px 58px 68px 55px 62px 58px 68px 55px 75px;
-    gap:5px; padding:7px 12px 7px 60px; align-items:center;
+    grid-template-columns: 1.5fr 60px 70px 65px 80px 75px 70px 90px 75px 60px 80px;
+    gap:6px; padding:7px 12px 7px 60px; align-items:center;
   }
   .emp-header{
     background:var(--panel-2); font-size:9px; text-transform:uppercase; letter-spacing:0.02em;
@@ -709,14 +709,12 @@ function renderTree(){
                   <div class="emp-name-head">Name</div>
                   <div class="emp-num">Tenure</div>
                   <div class="emp-num">Total Sales</div>
-                  <div class="emp-num">HP Added</div>
-                  <div class="emp-num">HP Met Mgr</div>
-                  <div class="emp-num">Sales on HP</div>
-                  <div class="emp-num">Sales on HP Mgr</div>
-                  <div class="emp-num">HL Assigned</div>
-                  <div class="emp-num">HL Met Mgr</div>
-                  <div class="emp-num">Sales on HL</div>
-                  <div class="emp-num">Sales on HL Mgr</div>
+                  <div class="emp-num">HP/HL Total</div>
+                  <div class="emp-num">Met with Mgr</div>
+                  <div class="emp-num">Met Alone</div>
+                  <div class="emp-num">Sales on Them</div>
+                  <div class="emp-num">Sales on Them (Mgr)</div>
+                  <div class="emp-num">Total Meet</div>
                   <div class="emp-num">Fresh %</div>
                   <div class="emp-num">Avg Talktime</div>
                 </div>`;
@@ -726,37 +724,32 @@ function renderTree(){
 
                 // Aggregate this manager's whole team for the summary row.
                 const agg = {
-                  sales_count:0, hot_total:0, hot_mgr:0, hp_converted:0, hp_converted_met:0,
-                  hl_assigned:0, hl_l2_met:0, hl_converted:0, hl_converted_met:0,
+                  sales_count:0, combined_total:0, combined_l2_met:0,
+                  combined_converted:0, combined_converted_met:0,
                   total_meet:0, fresh_meet:0,
                 };
                 teamList.forEach(emp => {
                   const m = (emp.metrics && emp.metrics[currentPeriod]) || {};
                   agg.sales_count += m.sales_count || 0;
-                  agg.hot_total += m.hot_total || 0;
-                  agg.hot_mgr += m.hot_mgr || 0;
-                  agg.hp_converted += m.hp_converted || 0;
-                  agg.hp_converted_met += m.hp_converted_met || 0;
-                  agg.hl_assigned += m.hl_assigned || 0;
-                  agg.hl_l2_met += m.hl_l2_met || 0;
-                  agg.hl_converted += m.hl_converted || 0;
-                  agg.hl_converted_met += m.hl_converted_met || 0;
+                  agg.combined_total += m.combined_total || 0;
+                  agg.combined_l2_met += m.combined_l2_met || 0;
+                  agg.combined_converted += m.combined_converted || 0;
+                  agg.combined_converted_met += m.combined_converted_met || 0;
                   agg.total_meet += m.total_meet || 0;
                   agg.fresh_meet += m.fresh_meet || 0;
                 });
+                const aggMetAlone = agg.combined_total - agg.combined_l2_met;
 
                 html += `<div class="emp-row emp-manager-row">
                   <div class="emp-name">${highlightMatch(mgr)} <span class="headcount-pill">(${teamList.length})</span></div>
                   <div class="emp-num"></div>
                   <div class="emp-num">${fmtNum(agg.sales_count)}</div>
-                  <div class="emp-num">${fmtNum(agg.hot_total)}</div>
-                  <div class="emp-num">${fmtNum(agg.hot_mgr)}</div>
-                  <div class="emp-num">${fmtNum(agg.hp_converted)}</div>
-                  <div class="emp-num">${fmtNum(agg.hp_converted_met)}</div>
-                  <div class="emp-num">${fmtNum(agg.hl_assigned)}</div>
-                  <div class="emp-num">${fmtNum(agg.hl_l2_met)}</div>
-                  <div class="emp-num">${fmtNum(agg.hl_converted)}</div>
-                  <div class="emp-num">${fmtNum(agg.hl_converted_met)}</div>
+                  <div class="emp-num">${fmtNum(agg.combined_total)}</div>
+                  <div class="emp-num">${fmtNum(agg.combined_l2_met)}</div>
+                  <div class="emp-num">${fmtNum(aggMetAlone)}</div>
+                  <div class="emp-num">${fmtNum(agg.combined_converted)}</div>
+                  <div class="emp-num">${fmtNum(agg.combined_converted_met)}</div>
+                  <div class="emp-num">${fmtNum(agg.total_meet)}</div>
                   <div class="emp-num">${fmtPctSimple(agg.fresh_meet, agg.total_meet)}</div>
                   <div class="emp-num" title="Not averaged across the team — talktime needs raw seconds + call-days to combine correctly, which aren't exposed per-group. Shown per employee only.">—</div>
                 </div>`;
@@ -764,18 +757,17 @@ function renderTree(){
                 for(const emp of teamList){
                   const empDim = searching && !matches(loc) && !matches(rm) && !matches(zm) && !matches(emp.name);
                   const m = (emp.metrics && emp.metrics[currentPeriod]) || {};
+                  const metAlone = (m.combined_total || 0) - (m.combined_l2_met || 0);
                   html += `<div class="emp-row ${empDim?'dimmed':''}" data-employee="${escAttr(emp.id)}">
                     <div class="emp-name">${highlightMatch(emp.name || emp.id)}</div>
                     <div class="emp-num">${fmtNum(emp.tenure)}</div>
                     <div class="emp-num">${fmtNum(m.sales_count)}</div>
-                    <div class="emp-num">${fmtNum(m.hot_total)}</div>
-                    <div class="emp-num">${fmtNum(m.hot_mgr)}</div>
-                    <div class="emp-num">${fmtNum(m.hp_converted)}</div>
-                    <div class="emp-num">${fmtNum(m.hp_converted_met)}</div>
-                    <div class="emp-num">${fmtNum(m.hl_assigned)}</div>
-                    <div class="emp-num">${fmtNum(m.hl_l2_met)}</div>
-                    <div class="emp-num">${fmtNum(m.hl_converted)}</div>
-                    <div class="emp-num">${fmtNum(m.hl_converted_met)}</div>
+                    <div class="emp-num">${fmtNum(m.combined_total)}</div>
+                    <div class="emp-num">${fmtNum(m.combined_l2_met)}</div>
+                    <div class="emp-num">${fmtNum(metAlone)}</div>
+                    <div class="emp-num">${fmtNum(m.combined_converted)}</div>
+                    <div class="emp-num">${fmtNum(m.combined_converted_met)}</div>
+                    <div class="emp-num">${fmtNum(m.total_meet)}</div>
                     <div class="emp-num">${fmtPctSimple(m.fresh_meet, m.total_meet)}</div>
                     <div class="emp-num">${escHtml(m.avg_talktime || '—')}</div>
                   </div>`;
