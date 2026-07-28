@@ -25,6 +25,7 @@ METRIC_FIELDS = {
         "total_meet": "total_meet", "fresh_meet": "fresh_meet",
         "hp_converted": None, "hp_converted_met": None, "hp_tp_sum_met": None, "hp_tp_over_200": None, "working_days": None,
         "combined_total": None, "combined_l2_met": None, "combined_converted": None, "combined_converted_met": None,
+        "hl_assigned": "top3_hl_assigned", "hl_l2_met": None, "hl_converted": None, "hl_converted_met": None,
     },
     "wtd": {
         "sales_count": "week_sales_done", "sales_value": "annual_week_sale_done",
@@ -35,6 +36,8 @@ METRIC_FIELDS = {
         "hp_tp_over_200": "l1_hot_tp_over_200_count_wtd", "working_days": "working_days_wtd",
         "combined_total": "combined_total_wtd", "combined_l2_met": "combined_l2_met_wtd",
         "combined_converted": "combined_converted_wtd", "combined_converted_met": "combined_converted_met_wtd",
+        "hl_assigned": "top3_hl_wtd", "hl_l2_met": "hl_l2_met_wtd",
+        "hl_converted": "hl_converted_wtd", "hl_converted_met": "hl_converted_met_wtd",
     },
     "mtd": {
         "sales_count": "month_sales_done", "sales_value": "annual_month_sale_done",
@@ -45,6 +48,8 @@ METRIC_FIELDS = {
         "hp_tp_over_200": "l1_hot_tp_over_200_count_mtd", "working_days": "working_days_mtd",
         "combined_total": "combined_total_mtd", "combined_l2_met": "combined_l2_met_mtd",
         "combined_converted": "combined_converted_mtd", "combined_converted_met": "combined_converted_met_mtd",
+        "hl_assigned": "top3_hl_mtd", "hl_l2_met": "hl_l2_met_mtd",
+        "hl_converted": "hl_converted_mtd", "hl_converted_met": "hl_converted_met_mtd",
     },
     "m1": {
         "sales_count": "sales_done_m1", "sales_value": "annual_sale_done_m1",
@@ -55,6 +60,8 @@ METRIC_FIELDS = {
         "hp_tp_over_200": "l1_hot_tp_over_200_count_m1", "working_days": "working_days_m1",
         "combined_total": "combined_total_m1", "combined_l2_met": "combined_l2_met_m1",
         "combined_converted": "combined_converted_m1", "combined_converted_met": "combined_converted_met_m1",
+        "hl_assigned": "top3_hl_m1", "hl_l2_met": "hl_l2_met_m1",
+        "hl_converted": "hl_converted_m1", "hl_converted_met": "hl_converted_met_m1",
     },
     "m2": {
         "sales_count": "sales_done_m2", "sales_value": "annual_sale_done_m2",
@@ -62,6 +69,7 @@ METRIC_FIELDS = {
         "total_meet": "total_meet_m2", "fresh_meet": "fresh_meet_m2",
         "hp_converted": None, "hp_converted_met": None, "hp_tp_sum_met": None, "hp_tp_over_200": None, "working_days": None,
         "combined_total": None, "combined_l2_met": None, "combined_converted": None, "combined_converted_met": None,
+        "hl_assigned": "top3_hl_m2", "hl_l2_met": None, "hl_converted": None, "hl_converted_met": None,
     },
     "m3": {
         "sales_count": "sales_done_m3", "sales_value": "annual_sale_done_m3",
@@ -69,6 +77,7 @@ METRIC_FIELDS = {
         "total_meet": "total_meet_m3", "fresh_meet": "fresh_meet_m3",
         "hp_converted": None, "hp_converted_met": None, "hp_tp_sum_met": None, "hp_tp_over_200": None, "working_days": None,
         "combined_total": None, "combined_l2_met": None, "combined_converted": None, "combined_converted_met": None,
+        "hl_assigned": "top3_hl_m3", "hl_l2_met": None, "hl_converted": None, "hl_converted_met": None,
     },
     "m4": {
         "sales_count": "sales_done_m4", "sales_value": "annual_sale_done_m4",
@@ -76,6 +85,7 @@ METRIC_FIELDS = {
         "total_meet": "total_meet_m4", "fresh_meet": "fresh_meet_m4",
         "hp_converted": None, "hp_converted_met": None, "hp_tp_sum_met": None, "hp_tp_over_200": None, "working_days": None,
         "combined_total": None, "combined_l2_met": None, "combined_converted": None, "combined_converted_met": None,
+        "hl_assigned": "top3_hl_m4", "hl_l2_met": None, "hl_converted": None, "hl_converted_met": None,
     },
 }
 
@@ -147,6 +157,14 @@ def build_node_metrics(rows):
             agg["combined_l2_met"] = 0
             agg["combined_converted"] = 0
             agg["combined_converted_met"] = 0
+        has_hl_assigned = fields.get("hl_assigned") is not None
+        if has_hl_assigned:
+            agg["hl_assigned"] = 0
+        has_hl_funnel = fields.get("hl_l2_met") is not None
+        if has_hl_funnel:
+            agg["hl_l2_met"] = 0
+            agg["hl_converted"] = 0
+            agg["hl_converted_met"] = 0
         for r in rows:
             agg["sales_count"] += _num(r, fields["sales_count"]) or 0
             agg["sales_value"] += _num(r, fields["sales_value"]) or 0
@@ -166,6 +184,12 @@ def build_node_metrics(rows):
                 agg["combined_l2_met"] += _num(r, fields["combined_l2_met"]) or 0
                 agg["combined_converted"] += _num(r, fields["combined_converted"]) or 0
                 agg["combined_converted_met"] += _num(r, fields["combined_converted_met"]) or 0
+            if has_hl_assigned:
+                agg["hl_assigned"] += _num(r, fields["hl_assigned"]) or 0
+            if has_hl_funnel:
+                agg["hl_l2_met"] += _num(r, fields["hl_l2_met"]) or 0
+                agg["hl_converted"] += _num(r, fields["hl_converted"]) or 0
+                agg["hl_converted_met"] += _num(r, fields["hl_converted_met"]) or 0
         out[period] = agg
     return out
 
