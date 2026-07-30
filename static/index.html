@@ -429,6 +429,7 @@ function sumChildMetrics(children){
         agg.hl_l2_met = (agg.hl_l2_met||0) + (m.hl_l2_met||0);
         agg.hl_converted = (agg.hl_converted||0) + (m.hl_converted||0);
         agg.hl_converted_met = (agg.hl_converted_met||0) + (m.hl_converted_met||0);
+        agg.hl_tp_over_200 = (agg.hl_tp_over_200||0) + (m.hl_tp_over_200||0);
       }
     });
     metrics[period] = agg;
@@ -527,7 +528,7 @@ function renderFunnel(){
     hot_total:0, hot_mgr:0, hp_converted:0, hp_converted_met:0,
     hp_tp_sum_met:0, hp_tp_over_200:0, total_meet:0, working_days:0,
     sales_count:0, sales_value:0,
-    hl_assigned:0, hl_l2_met:0, hl_converted:0, hl_converted_met:0,
+    hl_assigned:0, hl_l2_met:0, hl_converted:0, hl_converted_met:0, hl_tp_over_200:0,
   };
   Object.values(tree).forEach(zm => {
     const m = zm.metrics[currentPeriod];
@@ -546,6 +547,7 @@ function renderFunnel(){
     totals.hl_l2_met += m.hl_l2_met || 0;
     totals.hl_converted += m.hl_converted || 0;
     totals.hl_converted_met += m.hl_converted_met || 0;
+    totals.hl_tp_over_200 += m.hl_tp_over_200 || 0;
   });
 
   // Two independent funnels -- a lead that's both Hot and HL correctly shows
@@ -580,6 +582,7 @@ function renderFunnel(){
     { label: 'Total Sales', value: fmtNum(totals.sales_count) },
     { label: 'Annual Sales', value: fmtNum(totals.sales_value) },
     { label: '% of HP with TP > 200', value: fmtPctSimple(totals.hp_tp_over_200, totals.hot_total) },
+    { label: '% of HL with TP > 200', value: fmtPctSimple(totals.hl_tp_over_200, totals.hl_assigned) },
   ];
 
   panel.innerHTML = `
