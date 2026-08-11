@@ -82,6 +82,36 @@
     border:1px solid var(--hairline); background:var(--panel); color:var(--navy); cursor:pointer;
   }
   .vertical-filter select:focus{ outline:2px solid var(--slate); outline-offset:1px; }
+
+  /* Location multi-select */
+  .multiselect{ position:relative; display:inline-block; }
+  .multiselect-trigger{
+    font-family:inherit; font-size:12.5px; font-weight:500; padding:7px 12px; border-radius:8px;
+    border:1px solid var(--hairline); background:var(--panel); color:var(--navy); cursor:pointer;
+    min-width:140px; text-align:left; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  .multiselect-trigger:focus{ outline:2px solid var(--slate); outline-offset:1px; }
+  .multiselect-trigger.has-selection{ border-color:var(--navy); font-weight:600; }
+  .multiselect-panel{
+    position:absolute; top:calc(100% + 4px); left:0; z-index:50; min-width:260px; max-width:340px;
+    background:var(--panel); border:1px solid var(--hairline); border-radius:8px;
+    box-shadow:0 8px 24px rgba(26,29,36,0.12); padding:8px;
+  }
+  .multiselect-actions{ display:flex; gap:8px; padding:2px 4px 8px; border-bottom:1px solid var(--hairline); margin-bottom:6px; }
+  .multiselect-actions button{
+    font-family:inherit; font-size:11px; font-weight:600; color:var(--navy); background:none;
+    border:none; cursor:pointer; padding:2px 4px;
+  }
+  .multiselect-actions button:hover{ text-decoration:underline; }
+  .multiselect-options{ max-height:260px; overflow-y:auto; }
+  .multiselect-option{
+    display:flex; align-items:center; gap:8px; padding:5px 4px; font-size:12.5px; cursor:pointer;
+    border-radius:5px;
+  }
+  .multiselect-option:hover{ background:var(--navy-soft); }
+  .multiselect-option input{ cursor:pointer; }
+  .multiselect-empty{ padding:8px 4px; font-size:12px; color:var(--muted); }
+
   .tab{
     padding:7px 14px; border-radius:8px; border:1px solid var(--hairline); background:var(--panel);
     color:var(--muted); font-size:12.5px; font-weight:600; cursor:pointer;
@@ -236,8 +266,17 @@
       <select id="zm-select"><option value="all">All ZMs</option></select>
       <label for="rm-select">RM</label>
       <select id="rm-select"><option value="all">All RMs</option></select>
-      <label for="location-select">Location</label>
-      <select id="location-select"><option value="all">All Locations</option></select>
+      <label id="location-label">Location</label>
+      <div class="multiselect" id="location-multiselect">
+        <button type="button" class="multiselect-trigger" id="location-trigger" aria-haspopup="true" aria-expanded="false">All Locations</button>
+        <div class="multiselect-panel" id="location-panel" hidden>
+          <div class="multiselect-actions">
+            <button type="button" id="location-select-all">Select All</button>
+            <button type="button" id="location-clear-all">Clear</button>
+          </div>
+          <div class="multiselect-options" id="location-options"></div>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -300,10 +339,14 @@ const hierarchyUploadBtn = document.getElementById('hierarchy-upload');
 const hierarchyFileInput = document.getElementById('hierarchy-file');
 const zmSelectEl = document.getElementById('zm-select');
 const rmSelectEl = document.getElementById('rm-select');
-const locationSelectEl = document.getElementById('location-select');
+const locationTriggerEl = document.getElementById('location-trigger');
+const locationPanelEl = document.getElementById('location-panel');
+const locationOptionsEl = document.getElementById('location-options');
+const locationSelectAllBtn = document.getElementById('location-select-all');
+const locationClearAllBtn = document.getElementById('location-clear-all');
 let currentZmFilter = 'all';
 let currentRmFilter = 'all';
-let currentLocationFilter = 'all';
+let currentLocationFilter = [];   // empty array = All Locations (no filter); otherwise the specific selected location names
 
 function relativeTime(ts){
   if(!ts) return 'never';
@@ -381,7 +424,41 @@ function populateHierarchyFilters(){
   }
   refill(zmSelectEl, zmNames, 'All ZMs');
   refill(rmSelectEl, rmNames, 'All RMs', () => { currentRmFilter = 'all'; });
-  refill(locationSelectEl, locationNames, 'All Locations', () => { currentLocationFilter = 'all'; });
+
+  // Location: multi-select checkbox list instead of a single <option> refill.
+  // Prune any previously-selected locations that no longer exist under the
+  // current ZM/RM scope (e.g. ZM changed to one that doesn't have them).
+  const sortedLocationNames = [...locationNames].sort();
+  const validLocationSet = new Set(sortedLocationNames);
+  currentLocationFilter = currentLocationFilter.filter(loc => validLocationSet.has(loc));
+  renderLocationOptions(sortedLocationNames);
+  updateLocationTriggerLabel();
+}
+
+function renderLocationOptions(sortedLocationNames){
+  if(sortedLocationNames.length === 0){
+    locationOptionsEl.innerHTML = `<div class="multiselect-empty">No locations in the current selection</div>`;
+    return;
+  }
+  locationOptionsEl.innerHTML = sortedLocationNames.map(loc => `
+    <label class="multiselect-option">
+      <input type="checkbox" value="${escAttr(loc)}" ${currentLocationFilter.includes(loc) ? 'checked' : ''}>
+      <span>${escHtml(loc)}</span>
+    </label>
+  `).join('');
+}
+
+function updateLocationTriggerLabel(){
+  if(currentLocationFilter.length === 0){
+    locationTriggerEl.textContent = 'All Locations';
+    locationTriggerEl.classList.remove('has-selection');
+  } else if(currentLocationFilter.length === 1){
+    locationTriggerEl.textContent = currentLocationFilter[0];
+    locationTriggerEl.classList.add('has-selection');
+  } else {
+    locationTriggerEl.textContent = `${currentLocationFilter.length} Locations`;
+    locationTriggerEl.classList.add('has-selection');
+  }
 }
 
 // ---------------------------------------------------------------------
@@ -441,7 +518,8 @@ function sumChildMetrics(children){
 
 function getFilteredTree(){
   const tree = dashboardData.tree;
-  const noFilter = currentZmFilter === 'all' && currentRmFilter === 'all' && currentLocationFilter === 'all';
+  const locationActive = currentLocationFilter.length > 0;
+  const noFilter = currentZmFilter === 'all' && currentRmFilter === 'all' && !locationActive;
   if(noFilter) return tree;
 
   const result = {};
@@ -454,16 +532,16 @@ function getFilteredTree(){
 
       const locationChildren = {};
       for(const [loc, locNode] of Object.entries(rmNode.location_children)){
-        if(currentLocationFilter !== 'all' && loc !== currentLocationFilter) continue;
+        if(locationActive && !currentLocationFilter.includes(loc)) continue;
         locationChildren[loc] = locNode;
       }
       if(Object.keys(locationChildren).length === 0) continue;
-      const locationFiltered = currentLocationFilter !== 'all';
+      const locationFiltered = locationActive;
       const { metrics, headcount } = locationFiltered ? sumChildMetrics(locationChildren) : { metrics: rmNode.metrics, headcount: rmNode.headcount };
       rmChildren[rm] = { metrics, headcount, location_children: locationChildren };
     }
     if(Object.keys(rmChildren).length === 0) continue;
-    const rmOrLocFiltered = currentRmFilter !== 'all' || currentLocationFilter !== 'all';
+    const rmOrLocFiltered = currentRmFilter !== 'all' || locationActive;
     const { metrics, headcount } = rmOrLocFiltered ? sumChildMetrics(rmChildren) : { metrics: zmNode.metrics, headcount: zmNode.headcount };
     result[zm] = { metrics, headcount, rm_children: rmChildren };
   }
@@ -981,10 +1059,48 @@ rmSelectEl.addEventListener('change', (e) => {
   renderTree();
   renderFunnel();
 });
-locationSelectEl.addEventListener('change', (e) => {
-  currentLocationFilter = e.target.value;
+locationTriggerEl.addEventListener('click', (e) => {
+  e.stopPropagation();
+  const isOpen = !locationPanelEl.hidden;
+  locationPanelEl.hidden = isOpen;
+  locationTriggerEl.setAttribute('aria-expanded', String(!isOpen));
+});
+
+locationOptionsEl.addEventListener('change', (e) => {
+  if(e.target.type !== 'checkbox') return;
+  const loc = e.target.value;
+  if(e.target.checked){
+    if(!currentLocationFilter.includes(loc)) currentLocationFilter.push(loc);
+  } else {
+    currentLocationFilter = currentLocationFilter.filter(l => l !== loc);
+  }
+  updateLocationTriggerLabel();
   renderTree();
   renderFunnel();
+});
+
+locationSelectAllBtn.addEventListener('click', () => {
+  const allChecked = [...locationOptionsEl.querySelectorAll('input[type="checkbox"]')].map(cb => cb.value);
+  currentLocationFilter = allChecked;
+  locationOptionsEl.querySelectorAll('input[type="checkbox"]').forEach(cb => { cb.checked = true; });
+  updateLocationTriggerLabel();
+  renderTree();
+  renderFunnel();
+});
+
+locationClearAllBtn.addEventListener('click', () => {
+  currentLocationFilter = [];
+  locationOptionsEl.querySelectorAll('input[type="checkbox"]').forEach(cb => { cb.checked = false; });
+  updateLocationTriggerLabel();
+  renderTree();
+  renderFunnel();
+});
+
+document.addEventListener('click', (e) => {
+  if(!locationPanelEl.hidden && !document.getElementById('location-multiselect').contains(e.target)){
+    locationPanelEl.hidden = true;
+    locationTriggerEl.setAttribute('aria-expanded', 'false');
+  }
 });
 
 hierarchyUploadBtn.addEventListener('click', async () => {
