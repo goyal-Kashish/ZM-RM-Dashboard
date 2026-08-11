@@ -393,7 +393,7 @@ function sumChildMetrics(children){
   let headcount = 0;
   Object.values(children).forEach(child => { headcount += child.headcount; });
   for(const period of allPeriods){
-    const agg = { sales_count:0, sales_value:0, total_meet:0 };
+    const agg = { sales_count:0, sales_value:0, total_meet:0, followup_meet:0, with_mgr_meet_general:0 };
     let hasHot = false;
     let hasFunnel = false;
     Object.values(children).forEach(child => {
@@ -402,6 +402,8 @@ function sumChildMetrics(children){
       agg.sales_count += m.sales_count || 0;
       agg.sales_value += m.sales_value || 0;
       agg.total_meet += m.total_meet || 0;
+      agg.followup_meet += m.followup_meet || 0;
+      agg.with_mgr_meet_general += m.with_mgr_meet_general || 0;
       if('hot_total' in m){
         hasHot = true;
         agg.hot_total = (agg.hot_total||0) + (m.hot_total||0);
@@ -529,6 +531,7 @@ function renderFunnel(){
     hp_tp_sum_met:0, hp_tp_over_200:0, total_meet:0, working_days:0,
     sales_count:0, sales_value:0,
     hl_assigned:0, hl_l2_met:0, hl_converted:0, hl_converted_met:0, hl_tp_over_200:0,
+    followup_meet:0, with_mgr_meet_general:0,
   };
   Object.values(tree).forEach(zm => {
     const m = zm.metrics[currentPeriod];
@@ -548,7 +551,17 @@ function renderFunnel(){
     totals.hl_converted += m.hl_converted || 0;
     totals.hl_converted_met += m.hl_converted_met || 0;
     totals.hl_tp_over_200 += m.hl_tp_over_200 || 0;
+    totals.followup_meet += m.followup_meet || 0;
+    totals.with_mgr_meet_general += m.with_mgr_meet_general || 0;
   });
+
+  // Meeting Funnel: total meetings (fresh + followup) -> followup meetings ->
+  // of those followup meetings, how many had L2 present.
+  const meetingStages = [
+    { label: 'Total Meetings', value: totals.total_meet, pct: null },
+    { label: 'Followup Meetings', value: totals.followup_meet, pct: fmtPctSimple(totals.followup_meet, totals.total_meet) },
+    { label: 'Followup with L2', value: totals.with_mgr_meet_general, pct: fmtPctSimple(totals.with_mgr_meet_general, totals.followup_meet) },
+  ];
 
   // Two independent funnels -- a lead that's both Hot and HL correctly shows
   // up in BOTH, since these are separate views now, not a summed total.
@@ -586,6 +599,14 @@ function renderFunnel(){
   ];
 
   panel.innerHTML = `
+    <div class="funnel-wrap">
+      <div class="funnel-header">
+        <h2>Meeting Funnel</h2>
+        <span class="sub">${escHtml(PERIOD_LABELS[currentPeriod])} — reflects current ZM/RM/Location/Vertical filters</span>
+      </div>
+      <div class="funnel-stages">${renderStages(meetingStages)}</div>
+    </div>
+
     <div class="funnel-wrap">
       <div class="funnel-header">
         <h2>Hot Prospect Funnel</h2>

@@ -263,7 +263,7 @@ def hierarchy_status():
 # Vertical filter (e.g. Inhouse / TC-Channel / Emerging)
 # ---------------------------------------------------------------------------
 VERTICAL_FIELD = "vertical_id"
-VERTICAL_LABELS = {"1": "Inhouse", "56": "TC-Channel", "42": "Emerging"}
+VERTICAL_LABELS = {"1": "Inhouse", "56": "TC-Channel", "42": "Emerging", "65": "1.5Cr+"}
 
 
 def get_available_verticals(rows):

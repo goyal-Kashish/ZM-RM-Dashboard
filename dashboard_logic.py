@@ -22,7 +22,7 @@ METRIC_FIELDS = {
     "overall": {
         "sales_count": "sales_done", "sales_value": "annual_sale_done",
         "hot_total": "l1_hot_glids", "hot_self": "l1_hot_self_meet", "hot_mgr": "l1_hot_with_mgr_meet",
-        "total_meet": "total_meet", "fresh_meet": "fresh_meet",
+        "total_meet": "total_meet", "fresh_meet": "fresh_meet", "followup_meet": "followup_meet", "with_mgr_meet_general": "with_mgr_meet",
         "hp_converted": None, "hp_converted_met": None, "hp_tp_sum_met": None, "hp_tp_over_200": None, "working_days": None,
         "combined_total": None, "combined_l2_met": None, "combined_converted": None, "combined_converted_met": None,
         "hl_assigned": "top3_hl_assigned", "hl_l2_met": None, "hl_converted": None, "hl_converted_met": None, "hl_tp_over_200": None,
@@ -30,7 +30,7 @@ METRIC_FIELDS = {
     "wtd": {
         "sales_count": "week_sales_done", "sales_value": "annual_week_sale_done",
         "hot_total": "l1_hot_glids_wtd", "hot_self": "l1_hot_self_meet_wtd", "hot_mgr": "l1_hot_with_mgr_meet_wtd",
-        "total_meet": "total_meet_wtd", "fresh_meet": "fresh_meet_wtd",
+        "total_meet": "total_meet_wtd", "fresh_meet": "fresh_meet_wtd", "followup_meet": "followup_meet_wtd", "with_mgr_meet_general": "with_mgr_meet_wtd",
         "hp_converted": "l1_hot_converted_wtd", "hp_converted_met": "l1_hot_converted_met_wtd",
         "hp_tp_sum_met": "l1_hot_tp_sum_met_wtd",
         "hp_tp_over_200": "l1_hot_tp_over_200_count_wtd", "working_days": "working_days_wtd",
@@ -43,7 +43,7 @@ METRIC_FIELDS = {
     "mtd": {
         "sales_count": "month_sales_done", "sales_value": "annual_month_sale_done",
         "hot_total": "l1_hot_glids_mtd", "hot_self": "l1_hot_self_meet_mtd", "hot_mgr": "l1_hot_with_mgr_meet_mtd",
-        "total_meet": "total_meet_mtd", "fresh_meet": "fresh_meet_mtd",
+        "total_meet": "total_meet_mtd", "fresh_meet": "fresh_meet_mtd", "followup_meet": "followup_meet_mtd", "with_mgr_meet_general": "with_mgr_meet_mtd",
         "hp_converted": "l1_hot_converted_mtd", "hp_converted_met": "l1_hot_converted_met_mtd",
         "hp_tp_sum_met": "l1_hot_tp_sum_met_mtd",
         "hp_tp_over_200": "l1_hot_tp_over_200_count_mtd", "working_days": "working_days_mtd",
@@ -56,7 +56,7 @@ METRIC_FIELDS = {
     "m1": {
         "sales_count": "sales_done_m1", "sales_value": "annual_sale_done_m1",
         "hot_total": "l1_hot_glids_m1", "hot_self": "l1_hot_self_meet_m1", "hot_mgr": "l1_hot_with_mgr_meet_m1",
-        "total_meet": "total_meet_m1", "fresh_meet": "fresh_meet_m1",
+        "total_meet": "total_meet_m1", "fresh_meet": "fresh_meet_m1", "followup_meet": "followup_meet_m1", "with_mgr_meet_general": "with_mgr_meet_m1",
         "hp_converted": "l1_hot_converted_m1", "hp_converted_met": "l1_hot_converted_met_m1",
         "hp_tp_sum_met": "l1_hot_tp_sum_met_m1",
         "hp_tp_over_200": "l1_hot_tp_over_200_count_m1", "working_days": "working_days_m1",
@@ -69,7 +69,7 @@ METRIC_FIELDS = {
     "m2": {
         "sales_count": "sales_done_m2", "sales_value": "annual_sale_done_m2",
         "hot_total": None, "hot_self": None, "hot_mgr": None,
-        "total_meet": "total_meet_m2", "fresh_meet": "fresh_meet_m2",
+        "total_meet": "total_meet_m2", "fresh_meet": "fresh_meet_m2", "followup_meet": "followup_meet_m2", "with_mgr_meet_general": "with_mgr_meet_m2",
         "hp_converted": None, "hp_converted_met": None, "hp_tp_sum_met": None, "hp_tp_over_200": None, "working_days": None,
         "combined_total": None, "combined_l2_met": None, "combined_converted": None, "combined_converted_met": None,
         "hl_assigned": "top3_hl_m2", "hl_l2_met": None, "hl_converted": None, "hl_converted_met": None, "hl_tp_over_200": None,
@@ -77,7 +77,7 @@ METRIC_FIELDS = {
     "m3": {
         "sales_count": "sales_done_m3", "sales_value": "annual_sale_done_m3",
         "hot_total": None, "hot_self": None, "hot_mgr": None,
-        "total_meet": "total_meet_m3", "fresh_meet": "fresh_meet_m3",
+        "total_meet": "total_meet_m3", "fresh_meet": "fresh_meet_m3", "followup_meet": "followup_meet_m3", "with_mgr_meet_general": "with_mgr_meet_m3",
         "hp_converted": None, "hp_converted_met": None, "hp_tp_sum_met": None, "hp_tp_over_200": None, "working_days": None,
         "combined_total": None, "combined_l2_met": None, "combined_converted": None, "combined_converted_met": None,
         "hl_assigned": "top3_hl_m3", "hl_l2_met": None, "hl_converted": None, "hl_converted_met": None, "hl_tp_over_200": None,
@@ -85,7 +85,7 @@ METRIC_FIELDS = {
     "m4": {
         "sales_count": "sales_done_m4", "sales_value": "annual_sale_done_m4",
         "hot_total": None, "hot_self": None, "hot_mgr": None,
-        "total_meet": "total_meet_m4", "fresh_meet": "fresh_meet_m4",
+        "total_meet": "total_meet_m4", "fresh_meet": "fresh_meet_m4", "followup_meet": "followup_meet_m4", "with_mgr_meet_general": "with_mgr_meet_m4",
         "hp_converted": None, "hp_converted_met": None, "hp_tp_sum_met": None, "hp_tp_over_200": None, "working_days": None,
         "combined_total": None, "combined_l2_met": None, "combined_converted": None, "combined_converted_met": None,
         "hl_assigned": "top3_hl_m4", "hl_l2_met": None, "hl_converted": None, "hl_converted_met": None, "hl_tp_over_200": None,
@@ -141,7 +141,7 @@ def build_node_metrics(rows):
     out = {}
     for period in PERIODS:
         fields = METRIC_FIELDS[period]
-        agg = {"sales_count": 0, "sales_value": 0.0, "total_meet": 0}
+        agg = {"sales_count": 0, "sales_value": 0.0, "total_meet": 0, "followup_meet": 0, "with_mgr_meet_general": 0}
         has_hot = fields["hot_total"] is not None
         if has_hot:
             agg["hot_total"] = 0
@@ -173,6 +173,8 @@ def build_node_metrics(rows):
             agg["sales_count"] += _num(r, fields["sales_count"]) or 0
             agg["sales_value"] += _num(r, fields["sales_value"]) or 0
             agg["total_meet"] += _num(r, fields["total_meet"]) or 0
+            agg["followup_meet"] += _num(r, fields["followup_meet"]) or 0
+            agg["with_mgr_meet_general"] += _num(r, fields["with_mgr_meet_general"]) or 0
             if has_hot:
                 agg["hot_total"] += _num(r, fields["hot_total"]) or 0
                 agg["hot_self"] += _num(r, fields["hot_self"]) or 0
