@@ -510,12 +510,31 @@ LOCATION_SALES_PERIOD_FIELDS = {
     "mtd": {"sales_count": "sales_done_mtd", "sales_value": "annual_sales_mtd"},
     "m1": {"sales_count": "sales_done_prev_month", "sales_value": "annual_sales_prev_month"},
 }
+# Turnover-scoped counterparts, same three periods -- from the same query,
+# added later. Kept as a separate mapping (rather than merged into the one
+# above) so a push from the OLD version of the 13308 query (before these
+# columns existed) still works fine, just without turnover-scoped overlay.
+LOCATION_SALES_TURNOVER_FIELDS = {
+    "wtd": {
+        "sales_count_under": "sales_done_wtd_under_1_5cr", "sales_value_under": "annual_sales_wtd_under_1_5cr",
+        "sales_count_over": "sales_done_wtd_over_1_5cr", "sales_value_over": "annual_sales_wtd_over_1_5cr",
+    },
+    "mtd": {
+        "sales_count_under": "sales_done_mtd_under_1_5cr", "sales_value_under": "annual_sales_mtd_under_1_5cr",
+        "sales_count_over": "sales_done_mtd_over_1_5cr", "sales_value_over": "annual_sales_mtd_over_1_5cr",
+    },
+    "m1": {
+        "sales_count_under": "sales_done_prev_month_under_1_5cr", "sales_value_under": "annual_sales_prev_month_under_1_5cr",
+        "sales_count_over": "sales_done_prev_month_over_1_5cr", "sales_value_over": "annual_sales_prev_month_over_1_5cr",
+    },
+}
 
 
 def _recompute_parent_sales(parent_node, children):
-    """Recompute a parent's sales_count/sales_value for the authoritative
-    periods only, by summing its (possibly just-overlaid) children — leaves
-    every other metric (total_meet, hot_*, other periods) untouched."""
+    """Recompute a parent's sales_count/sales_value (and, when present, the
+    turnover-scoped under/over counterparts) for the authoritative periods
+    only, by summing its (possibly just-overlaid) children — leaves every
+    other metric (total_meet, hot_*, other periods) untouched."""
     for period in LOCATION_SALES_PERIOD_FIELDS:
         parent_node["metrics"][period]["sales_count"] = sum(
             c["metrics"][period]["sales_count"] for c in children
@@ -523,6 +542,11 @@ def _recompute_parent_sales(parent_node, children):
         parent_node["metrics"][period]["sales_value"] = sum(
             c["metrics"][period]["sales_value"] for c in children
         )
+        if all("sales_count_under" in c["metrics"][period] for c in children):
+            for field in ("sales_count_under", "sales_value_under", "sales_count_over", "sales_value_over"):
+                parent_node["metrics"][period][field] = sum(
+                    c["metrics"][period].get(field, 0) for c in children
+                )
 
 
 def compute_company_headcount_by_rm_location(full_tree):
@@ -572,18 +596,34 @@ def apply_authoritative_location_sales(tree, location_sales_rows, company_headco
     if not location_sales_rows:
         return {"ambiguous": [], "unmatched": []}
 
+    # Only include turnover-scoped fields if the pushed data actually has
+    # them -- an older push (before the 13308 query added these columns)
+    # still works fine, just without turnover-scoped overlay.
+    has_turnover_data = bool(location_sales_rows) and any(
+        f in location_sales_rows[0]
+        for fields in LOCATION_SALES_TURNOVER_FIELDS.values()
+        for f in fields.values()
+    )
+
     loc_lookup = {}
     for row in location_sales_rows:
         loc_name = row.get(LOCATION_SALES_LOCATION_FIELD)
         if not loc_name:
             continue
-        loc_lookup[loc_name] = {
+        entry = {
             period: {
                 "sales_count": _num(row, fields["sales_count"]) or 0,
                 "sales_value": _num(row, fields["sales_value"]) or 0,
             }
             for period, fields in LOCATION_SALES_PERIOD_FIELDS.items()
         }
+        if has_turnover_data:
+            for period, fields in LOCATION_SALES_TURNOVER_FIELDS.items():
+                entry[period]["sales_count_under"] = _num(row, fields["sales_count_under"]) or 0
+                entry[period]["sales_value_under"] = _num(row, fields["sales_value_under"]) or 0
+                entry[period]["sales_count_over"] = _num(row, fields["sales_count_over"]) or 0
+                entry[period]["sales_value_over"] = _num(row, fields["sales_value_over"]) or 0
+        loc_lookup[loc_name] = entry
 
     # Gather every (rm_name, loc_node) occurrence PRESENT in this (possibly
     # vertical-filtered) tree, for each location name.
@@ -625,14 +665,16 @@ def apply_authoritative_location_sales(tree, location_sales_rows, company_headco
                 if is_ambiguous and not is_majority_occurrence:
                     # Minority occurrence of an ambiguous name: the true total
                     # is already fully assigned to the majority occurrence,
-                    # so this one gets 0 rather than double-counting.
-                    for period in authoritative:
-                        loc_node["metrics"][period]["sales_count"] = 0
-                        loc_node["metrics"][period]["sales_value"] = 0
+                    # so this one gets 0 rather than double-counting. Zeroes
+                    # out every field present (sales_count/sales_value, and
+                    # the turnover-scoped ones when available) generically.
+                    for period, vals in authoritative.items():
+                        for key in vals:
+                            loc_node["metrics"][period][key] = 0
                 else:
                     for period, vals in authoritative.items():
-                        loc_node["metrics"][period]["sales_count"] = vals["sales_count"]
-                        loc_node["metrics"][period]["sales_value"] = vals["sales_value"]
+                        for key, val in vals.items():
+                            loc_node["metrics"][period][key] = val
             _recompute_parent_sales(rm_node, rm_node["location_children"].values())
         _recompute_parent_sales(zm_node, zm_node["rm_children"].values())
 
