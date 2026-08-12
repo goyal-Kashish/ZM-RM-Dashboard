@@ -47,6 +47,12 @@ METRIC_FIELDS = {
         "hot_total_over": "l1_hot_glids_wtd_over_1_5cr", "hot_mgr_over": "l1_hot_with_mgr_meet_wtd_over_1_5cr",
         "hp_converted_over": "l1_hot_converted_wtd_over_1_5cr", "hp_converted_met_over": "l1_hot_converted_met_wtd_over_1_5cr",
         "hp_tp_over_200_over": "l1_hot_tp_over_200_count_wtd_over_1_5cr",
+        "hl_assigned_under": "hl_assigned_wtd_under_1_5cr", "hl_l2_met_under": "hl_l2_met_wtd_under_1_5cr",
+        "hl_converted_under": "hl_converted_wtd_under_1_5cr", "hl_converted_met_under": "hl_converted_met_wtd_under_1_5cr",
+        "hl_tp_over_200_under": "hl_tp_over_200_wtd_under_1_5cr",
+        "hl_assigned_over": "hl_assigned_wtd_over_1_5cr", "hl_l2_met_over": "hl_l2_met_wtd_over_1_5cr",
+        "hl_converted_over": "hl_converted_wtd_over_1_5cr", "hl_converted_met_over": "hl_converted_met_wtd_over_1_5cr",
+        "hl_tp_over_200_over": "hl_tp_over_200_wtd_over_1_5cr",
     },
     "mtd": {
         "sales_count": "month_sales_done", "sales_value": "annual_month_sale_done",
@@ -68,6 +74,12 @@ METRIC_FIELDS = {
         "hot_total_over": "l1_hot_glids_mtd_over_1_5cr", "hot_mgr_over": "l1_hot_with_mgr_meet_mtd_over_1_5cr",
         "hp_converted_over": "l1_hot_converted_mtd_over_1_5cr", "hp_converted_met_over": "l1_hot_converted_met_mtd_over_1_5cr",
         "hp_tp_over_200_over": "l1_hot_tp_over_200_count_mtd_over_1_5cr",
+        "hl_assigned_under": "hl_assigned_mtd_under_1_5cr", "hl_l2_met_under": "hl_l2_met_mtd_under_1_5cr",
+        "hl_converted_under": "hl_converted_mtd_under_1_5cr", "hl_converted_met_under": "hl_converted_met_mtd_under_1_5cr",
+        "hl_tp_over_200_under": "hl_tp_over_200_mtd_under_1_5cr",
+        "hl_assigned_over": "hl_assigned_mtd_over_1_5cr", "hl_l2_met_over": "hl_l2_met_mtd_over_1_5cr",
+        "hl_converted_over": "hl_converted_mtd_over_1_5cr", "hl_converted_met_over": "hl_converted_met_mtd_over_1_5cr",
+        "hl_tp_over_200_over": "hl_tp_over_200_mtd_over_1_5cr",
     },
     "m1": {
         "sales_count": "sales_done_m1", "sales_value": "annual_sale_done_m1",
@@ -89,6 +101,12 @@ METRIC_FIELDS = {
         "hot_total_over": "l1_hot_glids_m1_over_1_5cr", "hot_mgr_over": "l1_hot_with_mgr_meet_m1_over_1_5cr",
         "hp_converted_over": "l1_hot_converted_m1_over_1_5cr", "hp_converted_met_over": "l1_hot_converted_met_m1_over_1_5cr",
         "hp_tp_over_200_over": "l1_hot_tp_over_200_count_m1_over_1_5cr",
+        "hl_assigned_under": "hl_assigned_m1_under_1_5cr", "hl_l2_met_under": "hl_l2_met_m1_under_1_5cr",
+        "hl_converted_under": "hl_converted_m1_under_1_5cr", "hl_converted_met_under": "hl_converted_met_m1_under_1_5cr",
+        "hl_tp_over_200_under": "hl_tp_over_200_m1_under_1_5cr",
+        "hl_assigned_over": "hl_assigned_m1_over_1_5cr", "hl_l2_met_over": "hl_l2_met_m1_over_1_5cr",
+        "hl_converted_over": "hl_converted_m1_over_1_5cr", "hl_converted_met_over": "hl_converted_met_m1_over_1_5cr",
+        "hl_tp_over_200_over": "hl_tp_over_200_m1_over_1_5cr",
     },
     "m2": {
         "sales_count": "sales_done_m2", "sales_value": "annual_sale_done_m2",
@@ -203,6 +221,18 @@ def build_node_metrics(rows):
             agg["hl_converted"] = 0
             agg["hl_converted_met"] = 0
             agg["hl_tp_over_200"] = 0
+        has_hl_turnover = fields.get("hl_assigned_under") is not None
+        if has_hl_turnover:
+            agg["hl_assigned_under"] = 0
+            agg["hl_l2_met_under"] = 0
+            agg["hl_converted_under"] = 0
+            agg["hl_converted_met_under"] = 0
+            agg["hl_tp_over_200_under"] = 0
+            agg["hl_assigned_over"] = 0
+            agg["hl_l2_met_over"] = 0
+            agg["hl_converted_over"] = 0
+            agg["hl_converted_met_over"] = 0
+            agg["hl_tp_over_200_over"] = 0
         has_meeting_turnover = fields.get("total_meet_under") is not None
         if has_meeting_turnover:
             agg["total_meet_under"] = 0
@@ -256,6 +286,17 @@ def build_node_metrics(rows):
                 agg["hl_converted"] += _num(r, fields["hl_converted"]) or 0
                 agg["hl_converted_met"] += _num(r, fields["hl_converted_met"]) or 0
                 agg["hl_tp_over_200"] += _num(r, fields["hl_tp_over_200"]) or 0
+            if has_hl_turnover:
+                agg["hl_assigned_under"] += _num(r, fields["hl_assigned_under"]) or 0
+                agg["hl_l2_met_under"] += _num(r, fields["hl_l2_met_under"]) or 0
+                agg["hl_converted_under"] += _num(r, fields["hl_converted_under"]) or 0
+                agg["hl_converted_met_under"] += _num(r, fields["hl_converted_met_under"]) or 0
+                agg["hl_tp_over_200_under"] += _num(r, fields["hl_tp_over_200_under"]) or 0
+                agg["hl_assigned_over"] += _num(r, fields["hl_assigned_over"]) or 0
+                agg["hl_l2_met_over"] += _num(r, fields["hl_l2_met_over"]) or 0
+                agg["hl_converted_over"] += _num(r, fields["hl_converted_over"]) or 0
+                agg["hl_converted_met_over"] += _num(r, fields["hl_converted_met_over"]) or 0
+                agg["hl_tp_over_200_over"] += _num(r, fields["hl_tp_over_200_over"]) or 0
         out[period] = agg
     return out
 
@@ -327,6 +368,25 @@ def build_employee_summary(row):
             "fresh_meet": _num(row, fields["fresh_meet"]) or 0,
             "avg_talktime": row.get(TALKTIME_FIELD_BY_PERIOD[period]),
         }
+        if fields.get("hot_total_under") is not None:
+            summary["metrics"][period].update({
+                "hot_total_under": _num(row, fields["hot_total_under"]) or 0,
+                "hot_mgr_under": _num(row, fields["hot_mgr_under"]) or 0,
+                "hp_converted_under": _num(row, fields["hp_converted_under"]) or 0,
+                "hp_converted_met_under": _num(row, fields["hp_converted_met_under"]) or 0,
+                "hot_total_over": _num(row, fields["hot_total_over"]) or 0,
+                "hot_mgr_over": _num(row, fields["hot_mgr_over"]) or 0,
+                "hp_converted_over": _num(row, fields["hp_converted_over"]) or 0,
+                "hp_converted_met_over": _num(row, fields["hp_converted_met_over"]) or 0,
+                "hl_assigned_under": _num(row, fields["hl_assigned_under"]) or 0,
+                "hl_l2_met_under": _num(row, fields["hl_l2_met_under"]) or 0,
+                "hl_converted_under": _num(row, fields["hl_converted_under"]) or 0,
+                "hl_converted_met_under": _num(row, fields["hl_converted_met_under"]) or 0,
+                "hl_assigned_over": _num(row, fields["hl_assigned_over"]) or 0,
+                "hl_l2_met_over": _num(row, fields["hl_l2_met_over"]) or 0,
+                "hl_converted_over": _num(row, fields["hl_converted_over"]) or 0,
+                "hl_converted_met_over": _num(row, fields["hl_converted_met_over"]) or 0,
+            })
     return summary
 
 

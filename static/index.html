@@ -198,32 +198,45 @@
   .error-banner{ text-align:center; padding:40px 20px; color:#C0392B; }
   .loading{ text-align:center; padding:40px 20px; color:var(--muted); }
 
-  /* Hot Prospect funnel */
-  .funnel-wrap{ margin-top:24px; }
-  .funnel-header{ display:flex; justify-content:space-between; align-items:baseline; margin-bottom:14px; }
-  .funnel-header h2{ font-size:15px; font-weight:700; color:var(--navy); margin:0; }
-  .funnel-header .sub{ font-size:11.5px; color:var(--muted); }
+  /* Funnels: three equal-width columns side by side, so all three fit on
+     screen without scrolling. Stacks back to one column on narrow screens. */
+  .funnel-grid{
+    display:grid; grid-template-columns:repeat(3, 1fr); gap:16px; margin-top:24px; align-items:stretch;
+  }
+  @media (max-width: 900px){
+    .funnel-grid{ grid-template-columns:1fr; }
+  }
+  .funnel-col{
+    background:var(--panel); border:1px solid var(--hairline); border-radius:var(--radius);
+    padding:16px 16px 12px; display:flex; flex-direction:column;
+  }
+  .funnel-header{ margin-bottom:10px; }
+  .funnel-header h2{ font-size:13.5px; font-weight:700; color:var(--navy); margin:0; }
+  .funnel-header .sub{ font-size:10px; color:var(--muted); display:block; margin-top:2px; }
   .funnel-unavailable{
     background:var(--panel); border:1px solid var(--hairline); border-radius:var(--radius);
     padding:30px; text-align:center; color:var(--muted); font-size:13px;
   }
-  .funnel-stages{
-    display:flex; flex-direction:column; gap:0; background:var(--panel); border:1px solid var(--hairline);
-    border-radius:var(--radius); overflow:hidden; margin-bottom:16px;
+
+  /* Compact vertical bar chart -- one bar per funnel stage, height scaled to
+     the first (largest) stage. Chosen over a pie chart because funnel
+     stages are nested subsets of each other (L2 Met is part of Total, not a
+     separate slice of a whole), which a pie chart would misrepresent. */
+  .bar-chart{
+    display:flex; align-items:flex-end; justify-content:space-around; gap:8px;
+    height:150px; padding-top:8px; border-bottom:1px solid var(--hairline);
   }
-  .funnel-stage{
-    display:flex; align-items:center; gap:16px; padding:14px 20px; border-bottom:1px solid #EEF0F2;
+  .bar-col{ display:flex; flex-direction:column; align-items:center; justify-content:flex-end; flex:1; height:100%; min-width:0; }
+  .bar-value{ font-family:Consolas,monospace; font-weight:700; font-size:12.5px; color:var(--navy); font-variant-numeric:tabular-nums; white-space:nowrap; }
+  .bar-pct{ font-family:Consolas,monospace; font-size:9.5px; color:var(--muted); margin-bottom:3px; }
+  .bar-shape{ width:60%; max-width:38px; background:var(--navy); border-radius:4px 4px 0 0; min-height:2px; transition:height 0.3s; }
+  .bar-labels{ display:flex; justify-content:space-around; gap:8px; padding-top:6px; }
+  .bar-label{
+    flex:1; min-width:0; text-align:center; font-size:9.5px; font-weight:600; color:var(--text);
+    line-height:1.25; overflow-wrap:break-word;
   }
-  .funnel-stage:last-child{ border-bottom:none; }
-  .funnel-bar-track{ flex:1; background:#EEF0F2; border-radius:6px; height:34px; position:relative; overflow:hidden; }
-  .funnel-bar-fill{ background:var(--navy); height:100%; border-radius:6px 0 0 6px; transition:width 0.3s; }
-  .funnel-stage-label{ width:220px; flex:none; font-size:12.5px; font-weight:600; color:var(--text); }
-  .funnel-stage-value{
-    width:110px; flex:none; text-align:right; font-family:Consolas,monospace; font-weight:700;
-    font-size:15px; color:var(--navy); font-variant-numeric:tabular-nums;
-  }
-  .funnel-stage-pct{ width:90px; flex:none; text-align:right; font-family:Consolas,monospace; font-size:12px; color:var(--muted); }
-  .funnel-cards{ display:grid; grid-template-columns:repeat(auto-fit, minmax(160px,1fr)); gap:12px; }
+
+  .funnel-cards{ display:grid; grid-template-columns:repeat(auto-fit, minmax(160px,1fr)); gap:12px; margin-top:16px; }
   .funnel-card{
     background:var(--panel); border:1px solid var(--hairline); border-radius:8px; padding:14px 16px;
     border-top:3px solid var(--slate);
@@ -473,6 +486,36 @@ function updateLocationTriggerLabel(){
 // ---------------------------------------------------------------------
 // Top-ZM bar chart
 // ---------------------------------------------------------------------
+// Per-employee HP/HL numbers, scoped by the current Turnover filter.
+// "All Turnover" uses the combined (deduplicated) metric, same as always.
+// A specific bucket uses HP-scoped + HL-scoped added together instead --
+// there's no turnover-scoped version of the deduplicated combined metric
+// (that would need redoing the same large SQL chain a third time), so this
+// is a labelled approximation: a lead that's both Hot and HL and in this
+// specific bucket could count twice here, unlike the always-exact combined
+// total shown under "All Turnover".
+function empScopedMetrics(m){
+  if(!m) return { total:0, l2met:0, converted:0, convertedMet:0 };
+  if(currentTurnoverFilter === 'all' || m.hot_total_under === undefined){
+    return {
+      total: m.combined_total || 0, l2met: m.combined_l2_met || 0,
+      converted: m.combined_converted || 0, convertedMet: m.combined_converted_met || 0,
+    };
+  }
+  const pick = (base) => {
+    if(currentTurnoverFilter === 'under') return m[base+'_under'] || 0;
+    if(currentTurnoverFilter === 'over') return m[base+'_over'] || 0;
+    if(currentTurnoverFilter === 'no_gst') return (m[base]||0) - (m[base+'_under']||0) - (m[base+'_over']||0);
+    return m[base] || 0;
+  };
+  return {
+    total: pick('hot_total') + pick('hl_assigned'),
+    l2met: pick('hot_mgr') + pick('hl_l2_met'),
+    converted: pick('hp_converted') + pick('hl_converted'),
+    convertedMet: pick('hp_converted_met') + pick('hl_converted_met'),
+  };
+}
+
 function sumChildMetrics(children){
   const allPeriods = ['overall','wtd','mtd','m1','m2','m3','m4'];
   const metrics = {};
@@ -536,6 +579,18 @@ function sumChildMetrics(children){
         agg.hl_converted = (agg.hl_converted||0) + (m.hl_converted||0);
         agg.hl_converted_met = (agg.hl_converted_met||0) + (m.hl_converted_met||0);
         agg.hl_tp_over_200 = (agg.hl_tp_over_200||0) + (m.hl_tp_over_200||0);
+      }
+      if('hl_assigned_under' in m){
+        agg.hl_assigned_under = (agg.hl_assigned_under||0) + (m.hl_assigned_under||0);
+        agg.hl_l2_met_under = (agg.hl_l2_met_under||0) + (m.hl_l2_met_under||0);
+        agg.hl_converted_under = (agg.hl_converted_under||0) + (m.hl_converted_under||0);
+        agg.hl_converted_met_under = (agg.hl_converted_met_under||0) + (m.hl_converted_met_under||0);
+        agg.hl_tp_over_200_under = (agg.hl_tp_over_200_under||0) + (m.hl_tp_over_200_under||0);
+        agg.hl_assigned_over = (agg.hl_assigned_over||0) + (m.hl_assigned_over||0);
+        agg.hl_l2_met_over = (agg.hl_l2_met_over||0) + (m.hl_l2_met_over||0);
+        agg.hl_converted_over = (agg.hl_converted_over||0) + (m.hl_converted_over||0);
+        agg.hl_converted_met_over = (agg.hl_converted_met_over||0) + (m.hl_converted_met_over||0);
+        agg.hl_tp_over_200_over = (agg.hl_tp_over_200_over||0) + (m.hl_tp_over_200_over||0);
       }
     });
     metrics[period] = agg;
@@ -623,9 +678,9 @@ function renderFunnel(){
 
   if(!FUNNEL_PERIODS.includes(currentPeriod)){
     panel.innerHTML = `
-      <div class="funnel-wrap">
-        <div class="funnel-header"><h2>Hot Prospect Funnel</h2></div>
-        <div class="funnel-unavailable">This funnel is only available on the WTD, ${PERIOD_LABELS.mtd}, and ${PERIOD_LABELS.m1} tabs.</div>
+      <div class="funnel-col">
+        <div class="funnel-header"><h2>Funnels</h2></div>
+        <div class="funnel-unavailable">Funnels are only available on the WTD, ${PERIOD_LABELS.mtd}, and ${PERIOD_LABELS.m1} tabs.</div>
       </div>`;
     return;
   }
@@ -641,6 +696,8 @@ function renderFunnel(){
     hot_total_over:0, hot_mgr_over:0, hp_converted_over:0, hp_converted_met_over:0, hp_tp_over_200_over:0,
     total_meet_under:0, followup_meet_under:0, with_mgr_meet_under:0,
     total_meet_over:0, followup_meet_over:0, with_mgr_meet_over:0,
+    hl_assigned_under:0, hl_l2_met_under:0, hl_converted_under:0, hl_converted_met_under:0, hl_tp_over_200_under:0,
+    hl_assigned_over:0, hl_l2_met_over:0, hl_converted_over:0, hl_converted_met_over:0, hl_tp_over_200_over:0,
   };
   Object.values(tree).forEach(zm => {
     const m = zm.metrics[currentPeriod];
@@ -678,6 +735,16 @@ function renderFunnel(){
     totals.total_meet_over += m.total_meet_over || 0;
     totals.followup_meet_over += m.followup_meet_over || 0;
     totals.with_mgr_meet_over += m.with_mgr_meet_over || 0;
+    totals.hl_assigned_under += m.hl_assigned_under || 0;
+    totals.hl_l2_met_under += m.hl_l2_met_under || 0;
+    totals.hl_converted_under += m.hl_converted_under || 0;
+    totals.hl_converted_met_under += m.hl_converted_met_under || 0;
+    totals.hl_tp_over_200_under += m.hl_tp_over_200_under || 0;
+    totals.hl_assigned_over += m.hl_assigned_over || 0;
+    totals.hl_l2_met_over += m.hl_l2_met_over || 0;
+    totals.hl_converted_over += m.hl_converted_over || 0;
+    totals.hl_converted_met_over += m.hl_converted_met_over || 0;
+    totals.hl_tp_over_200_over += m.hl_tp_over_200_over || 0;
   });
 
   // Meeting Funnel numbers, scoped by the Turnover filter (same pattern as
@@ -721,6 +788,28 @@ function renderFunnel(){
     hpTpOver200 = totals.hp_tp_over_200;
   }
 
+  // Top 3 HL Funnel numbers, scoped by the Turnover filter (same pattern).
+  let hlTotal, hlMgr, hlConverted, hlConvertedMet, hlTpOver200;
+  if(currentTurnoverFilter === 'under'){
+    hlTotal = totals.hl_assigned_under; hlMgr = totals.hl_l2_met_under;
+    hlConverted = totals.hl_converted_under; hlConvertedMet = totals.hl_converted_met_under;
+    hlTpOver200 = totals.hl_tp_over_200_under;
+  } else if(currentTurnoverFilter === 'over'){
+    hlTotal = totals.hl_assigned_over; hlMgr = totals.hl_l2_met_over;
+    hlConverted = totals.hl_converted_over; hlConvertedMet = totals.hl_converted_met_over;
+    hlTpOver200 = totals.hl_tp_over_200_over;
+  } else if(currentTurnoverFilter === 'no_gst'){
+    hlTotal = totals.hl_assigned - totals.hl_assigned_under - totals.hl_assigned_over;
+    hlMgr = totals.hl_l2_met - totals.hl_l2_met_under - totals.hl_l2_met_over;
+    hlConverted = totals.hl_converted - totals.hl_converted_under - totals.hl_converted_over;
+    hlConvertedMet = totals.hl_converted_met - totals.hl_converted_met_under - totals.hl_converted_met_over;
+    hlTpOver200 = totals.hl_tp_over_200 - totals.hl_tp_over_200_under - totals.hl_tp_over_200_over;
+  } else {
+    hlTotal = totals.hl_assigned; hlMgr = totals.hl_l2_met;
+    hlConverted = totals.hl_converted; hlConvertedMet = totals.hl_converted_met;
+    hlTpOver200 = totals.hl_tp_over_200;
+  }
+
   // Meeting Funnel: total meetings (fresh + followup) -> followup meetings ->
   // of those followup meetings, how many had L2 present.
   const meetingStages = [
@@ -738,55 +827,65 @@ function renderFunnel(){
     { label: 'Converted (of L2 Met)', value: hpConvertedMet, pct: fmtPctSimple(hpConvertedMet, hpMgr) },
   ];
   const hlStages = [
-    { label: 'Top 3 HL Assigned', value: totals.hl_assigned, pct: null },
-    { label: 'L2 Met', value: totals.hl_l2_met, pct: fmtPctSimple(totals.hl_l2_met, totals.hl_assigned) },
-    { label: 'Converted (of all)', value: totals.hl_converted, pct: fmtPctSimple(totals.hl_converted, totals.hl_assigned) },
-    { label: 'Converted (of L2 Met)', value: totals.hl_converted_met, pct: fmtPctSimple(totals.hl_converted_met, totals.hl_l2_met) },
+    { label: 'Top 3 HL Assigned', value: hlTotal, pct: null },
+    { label: 'L2 Met', value: hlMgr, pct: fmtPctSimple(hlMgr, hlTotal) },
+    { label: 'Converted (of all)', value: hlConverted, pct: fmtPctSimple(hlConverted, hlTotal) },
+    { label: 'Converted (of L2 Met)', value: hlConvertedMet, pct: fmtPctSimple(hlConvertedMet, hlMgr) },
   ];
 
+  // Compact vertical bar chart -- 4 bars (one per stage), height scaled to
+  // the largest (first) stage. Value + % shown above each bar, stage name
+  // below -- readable even in a narrow 1/3-width column.
   const renderStages = (stages) => {
-    const maxVal = Math.max(1, stages[0].value);
-    return stages.map(s => `
-      <div class="funnel-stage">
-        <div class="funnel-stage-label">${escHtml(s.label)}</div>
-        <div class="funnel-bar-track"><div class="funnel-bar-fill" style="width:${Math.max(2, (s.value/maxVal*100))}%"></div></div>
-        <div class="funnel-stage-value">${fmtNum(s.value)}</div>
-        <div class="funnel-stage-pct">${s.pct ?? ''}</div>
+    const maxVal = Math.max(1, ...stages.map(s => s.value));
+    const bars = stages.map(s => `
+      <div class="bar-col">
+        <div class="bar-value">${fmtNum(s.value)}</div>
+        <div class="bar-pct">${s.pct ?? ''}</div>
+        <div class="bar-shape" style="height:${Math.max(2, (s.value/maxVal*100))}%"></div>
       </div>
     `).join('');
+    const labels = stages.map(s => `<div class="bar-label">${escHtml(s.label)}</div>`).join('');
+    return `<div class="bar-chart">${bars}</div><div class="bar-labels">${labels}</div>`;
   };
+
+  const turnoverNote = currentTurnoverFilter !== 'all'
+    ? ` — Turnover: ${escHtml({under:'<1.5Cr', over:'≥1.5Cr', no_gst:'No GST'}[currentTurnoverFilter])}`
+    : '';
 
   const cards = [
     { label: 'Avg Daily Meetings', value: fmtRatio(totals.total_meet, totals.working_days) },
     { label: 'Total Sales', value: fmtNum(totals.sales_count) },
     { label: 'Annual Sales', value: fmtNum(totals.sales_value) },
     { label: '% of HP with TP > 200', value: fmtPctSimple(hpTpOver200, hpTotal) },
-    { label: '% of HL with TP > 200', value: fmtPctSimple(totals.hl_tp_over_200, totals.hl_assigned) },
+    { label: '% of HL with TP > 200', value: fmtPctSimple(hlTpOver200, hlTotal) },
   ];
 
   panel.innerHTML = `
-    <div class="funnel-wrap">
-      <div class="funnel-header">
-        <h2>Meeting Funnel</h2>
-        <span class="sub">${escHtml(PERIOD_LABELS[currentPeriod])} — reflects current ZM/RM/Location/Vertical filters${currentTurnoverFilter !== 'all' ? ` — Turnover: ${escHtml({under:'<1.5Cr', over:'≥1.5Cr', no_gst:'No GST'}[currentTurnoverFilter])}` : ''}</span>
+    <div class="funnel-grid">
+      <div class="funnel-col">
+        <div class="funnel-header">
+          <h2>Meeting Funnel</h2>
+          <span class="sub">${escHtml(PERIOD_LABELS[currentPeriod])}${turnoverNote}</span>
+        </div>
+        ${renderStages(meetingStages)}
       </div>
-      <div class="funnel-stages">${renderStages(meetingStages)}</div>
-    </div>
 
-    <div class="funnel-wrap">
-      <div class="funnel-header">
-        <h2>Hot Prospect Funnel</h2>
-        <span class="sub">${escHtml(PERIOD_LABELS[currentPeriod])} — reflects current ZM/RM/Location/Vertical filters${currentTurnoverFilter !== 'all' ? ` — Turnover: ${escHtml({under:'<1.5Cr', over:'≥1.5Cr', no_gst:'No GST'}[currentTurnoverFilter])}` : ''}</span>
+      <div class="funnel-col">
+        <div class="funnel-header">
+          <h2>Hot Prospect Funnel</h2>
+          <span class="sub">${escHtml(PERIOD_LABELS[currentPeriod])}${turnoverNote}</span>
+        </div>
+        ${renderStages(hpStages)}
       </div>
-      <div class="funnel-stages">${renderStages(hpStages)}</div>
-    </div>
 
-    <div class="funnel-wrap">
-      <div class="funnel-header">
-        <h2>Top 3 HL Funnel</h2>
-        <span class="sub">${escHtml(PERIOD_LABELS[currentPeriod])} — reflects current ZM/RM/Location/Vertical filters</span>
+      <div class="funnel-col">
+        <div class="funnel-header">
+          <h2>Top 3 HL Funnel</h2>
+          <span class="sub">${escHtml(PERIOD_LABELS[currentPeriod])}${turnoverNote}</span>
+        </div>
+        ${renderStages(hlStages)}
       </div>
-      <div class="funnel-stages">${renderStages(hlStages)}</div>
     </div>
 
     <div class="funnel-cards">
@@ -899,7 +998,7 @@ function renderTree(){
                   <div class="emp-name-head">Name</div>
                   <div class="emp-num">Tenure</div>
                   <div class="emp-num">Total Sales</div>
-                  <div class="emp-num">HP/HL Total</div>
+                  <div class="emp-num" title="${currentTurnoverFilter!=='all' ? 'Turnover filter active: approximated as HP-scoped + HL-scoped added together (may slightly double-count a lead that is both).' : ''}">HP/HL Total</div>
                   <div class="emp-num">Met with Mgr</div>
                   <div class="emp-num">Met Alone</div>
                   <div class="emp-num">Sales on Them</div>
@@ -912,33 +1011,32 @@ function renderTree(){
               for(const mgr of managerNames){
                 const teamList = [...byManager.get(mgr)].sort((a,b) => (a.name||'').localeCompare(b.name||''));
 
-                // Aggregate this manager's whole team for the summary row.
-                const agg = {
-                  sales_count:0, combined_total:0, combined_l2_met:0,
-                  combined_converted:0, combined_converted_met:0,
-                  total_meet:0, fresh_meet:0,
-                };
+                // Aggregate this manager's whole team for the summary row --
+                // scoped PER EMPLOYEE first, then summed (not the other way
+                // round), so the turnover approximation stays consistent.
+                const agg = { sales_count:0, total:0, l2met:0, converted:0, convertedMet:0, total_meet:0, fresh_meet:0 };
                 teamList.forEach(emp => {
                   const m = (emp.metrics && emp.metrics[currentPeriod]) || {};
+                  const s = empScopedMetrics(m);
                   agg.sales_count += m.sales_count || 0;
-                  agg.combined_total += m.combined_total || 0;
-                  agg.combined_l2_met += m.combined_l2_met || 0;
-                  agg.combined_converted += m.combined_converted || 0;
-                  agg.combined_converted_met += m.combined_converted_met || 0;
+                  agg.total += s.total;
+                  agg.l2met += s.l2met;
+                  agg.converted += s.converted;
+                  agg.convertedMet += s.convertedMet;
                   agg.total_meet += m.total_meet || 0;
                   agg.fresh_meet += m.fresh_meet || 0;
                 });
-                const aggMetAlone = agg.combined_total - agg.combined_l2_met;
+                const aggMetAlone = agg.total - agg.l2met;
 
                 html += `<div class="emp-row emp-manager-row">
                   <div class="emp-name">${highlightMatch(mgr)} <span class="headcount-pill">(${teamList.length})</span></div>
                   <div class="emp-num"></div>
                   <div class="emp-num">${fmtNum(agg.sales_count)}</div>
-                  <div class="emp-num">${fmtNum(agg.combined_total)}</div>
-                  <div class="emp-num">${fmtNum(agg.combined_l2_met)}</div>
+                  <div class="emp-num">${fmtNum(agg.total)}</div>
+                  <div class="emp-num">${fmtNum(agg.l2met)}</div>
                   <div class="emp-num">${fmtNum(aggMetAlone)}</div>
-                  <div class="emp-num">${fmtNum(agg.combined_converted)}</div>
-                  <div class="emp-num">${fmtNum(agg.combined_converted_met)}</div>
+                  <div class="emp-num">${fmtNum(agg.converted)}</div>
+                  <div class="emp-num">${fmtNum(agg.convertedMet)}</div>
                   <div class="emp-num">${fmtNum(agg.total_meet)}</div>
                   <div class="emp-num">${fmtPctSimple(agg.fresh_meet, agg.total_meet)}</div>
                   <div class="emp-num" title="Not averaged across the team — talktime needs raw seconds + call-days to combine correctly, which aren't exposed per-group. Shown per employee only.">—</div>
@@ -947,16 +1045,17 @@ function renderTree(){
                 for(const emp of teamList){
                   const empDim = searching && !matches(loc) && !matches(rm) && !matches(zm) && !matches(emp.name);
                   const m = (emp.metrics && emp.metrics[currentPeriod]) || {};
-                  const metAlone = (m.combined_total || 0) - (m.combined_l2_met || 0);
+                  const s = empScopedMetrics(m);
+                  const metAlone = s.total - s.l2met;
                   html += `<div class="emp-row ${empDim?'dimmed':''}" data-employee="${escAttr(emp.id)}">
                     <div class="emp-name">${highlightMatch(emp.name || emp.id)}</div>
                     <div class="emp-num">${fmtNum(emp.tenure)}</div>
                     <div class="emp-num">${fmtNum(m.sales_count)}</div>
-                    <div class="emp-num">${fmtNum(m.combined_total)}</div>
-                    <div class="emp-num">${fmtNum(m.combined_l2_met)}</div>
+                    <div class="emp-num">${fmtNum(s.total)}</div>
+                    <div class="emp-num">${fmtNum(s.l2met)}</div>
                     <div class="emp-num">${fmtNum(metAlone)}</div>
-                    <div class="emp-num">${fmtNum(m.combined_converted)}</div>
-                    <div class="emp-num">${fmtNum(m.combined_converted_met)}</div>
+                    <div class="emp-num">${fmtNum(s.converted)}</div>
+                    <div class="emp-num">${fmtNum(s.convertedMet)}</div>
                     <div class="emp-num">${fmtNum(m.total_meet)}</div>
                     <div class="emp-num">${fmtPctSimple(m.fresh_meet, m.total_meet)}</div>
                     <div class="emp-num">${escHtml(m.avg_talktime || '—')}</div>
@@ -1149,6 +1248,7 @@ rmSelectEl.addEventListener('change', (e) => {
 });
 turnoverSelectEl.addEventListener('change', (e) => {
   currentTurnoverFilter = e.target.value;
+  renderTree();
   renderFunnel();
 });
 
