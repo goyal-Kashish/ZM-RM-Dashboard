@@ -387,6 +387,11 @@ def build_employee_summary(row):
                 "hl_converted_over": _num(row, fields["hl_converted_over"]) or 0,
                 "hl_converted_met_over": _num(row, fields["hl_converted_met_over"]) or 0,
             })
+        if fields.get("total_meet_under") is not None:
+            summary["metrics"][period].update({
+                "total_meet_under": _num(row, fields["total_meet_under"]) or 0,
+                "total_meet_over": _num(row, fields["total_meet_over"]) or 0,
+            })
     return summary
 
 

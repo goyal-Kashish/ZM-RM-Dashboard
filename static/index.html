@@ -516,6 +516,22 @@ function empScopedMetrics(m){
   };
 }
 
+// Per-employee Total Meet, scoped by the current Turnover filter. Unlike
+// empScopedMetrics above, this is EXACT, not an approximation -- the
+// Meeting Funnel's turnover split already computes total_meet_under/over
+// directly per employee, no summing-across-funnels needed. Fresh % stays
+// unscoped regardless of this filter -- fresh_meet itself was never split
+// by turnover, so pairing a scoped total with an unscoped fresh count would
+// produce a meaningless (or >100%) percentage.
+function empScopedTotalMeet(m){
+  if(!m) return 0;
+  if(currentTurnoverFilter === 'all' || m.total_meet_under === undefined) return m.total_meet || 0;
+  if(currentTurnoverFilter === 'under') return m.total_meet_under || 0;
+  if(currentTurnoverFilter === 'over') return m.total_meet_over || 0;
+  if(currentTurnoverFilter === 'no_gst') return (m.total_meet||0) - (m.total_meet_under||0) - (m.total_meet_over||0);
+  return m.total_meet || 0;
+}
+
 function sumChildMetrics(children){
   const allPeriods = ['overall','wtd','mtd','m1','m2','m3','m4'];
   const metrics = {};
@@ -1003,8 +1019,8 @@ function renderTree(){
                   <div class="emp-num">Met Alone</div>
                   <div class="emp-num">Sales on Them</div>
                   <div class="emp-num">Sales on Them (Mgr)</div>
-                  <div class="emp-num">Total Meet</div>
-                  <div class="emp-num">Fresh %</div>
+                  <div class="emp-num" title="${currentTurnoverFilter!=='all' ? 'Turnover filter active: shows exact meetings for this bucket.' : ''}">Total Meet</div>
+                  <div class="emp-num" title="Always shows all-turnover Fresh % -- the underlying fresh-meeting count isn't split by turnover, so it can't be scoped to a bucket accurately.">Fresh %</div>
                   <div class="emp-num">Avg Talktime</div>
                 </div>`;
 
@@ -1014,7 +1030,9 @@ function renderTree(){
                 // Aggregate this manager's whole team for the summary row --
                 // scoped PER EMPLOYEE first, then summed (not the other way
                 // round), so the turnover approximation stays consistent.
-                const agg = { sales_count:0, total:0, l2met:0, converted:0, convertedMet:0, total_meet:0, fresh_meet:0 };
+                // total_meet stays unscoped (needed for Fresh %); scoped_meet
+                // is the separately-tracked turnover-scoped Total Meet value.
+                const agg = { sales_count:0, total:0, l2met:0, converted:0, convertedMet:0, total_meet:0, scoped_meet:0, fresh_meet:0 };
                 teamList.forEach(emp => {
                   const m = (emp.metrics && emp.metrics[currentPeriod]) || {};
                   const s = empScopedMetrics(m);
@@ -1024,6 +1042,7 @@ function renderTree(){
                   agg.converted += s.converted;
                   agg.convertedMet += s.convertedMet;
                   agg.total_meet += m.total_meet || 0;
+                  agg.scoped_meet += empScopedTotalMeet(m);
                   agg.fresh_meet += m.fresh_meet || 0;
                 });
                 const aggMetAlone = agg.total - agg.l2met;
@@ -1037,7 +1056,7 @@ function renderTree(){
                   <div class="emp-num">${fmtNum(aggMetAlone)}</div>
                   <div class="emp-num">${fmtNum(agg.converted)}</div>
                   <div class="emp-num">${fmtNum(agg.convertedMet)}</div>
-                  <div class="emp-num">${fmtNum(agg.total_meet)}</div>
+                  <div class="emp-num">${fmtNum(agg.scoped_meet)}</div>
                   <div class="emp-num">${fmtPctSimple(agg.fresh_meet, agg.total_meet)}</div>
                   <div class="emp-num" title="Not averaged across the team — talktime needs raw seconds + call-days to combine correctly, which aren't exposed per-group. Shown per employee only.">—</div>
                 </div>`;
@@ -1056,7 +1075,7 @@ function renderTree(){
                     <div class="emp-num">${fmtNum(metAlone)}</div>
                     <div class="emp-num">${fmtNum(s.converted)}</div>
                     <div class="emp-num">${fmtNum(s.convertedMet)}</div>
-                    <div class="emp-num">${fmtNum(m.total_meet)}</div>
+                    <div class="emp-num">${fmtNum(empScopedTotalMeet(m))}</div>
                     <div class="emp-num">${fmtPctSimple(m.fresh_meet, m.total_meet)}</div>
                     <div class="emp-num">${escHtml(m.avg_talktime || '—')}</div>
                   </div>`;
