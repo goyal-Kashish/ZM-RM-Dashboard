@@ -39,6 +39,12 @@ METRIC_FIELDS = {
         "hl_assigned": "top3_hl_wtd", "hl_l2_met": "hl_l2_met_wtd",
         "hl_converted": "hl_converted_wtd", "hl_converted_met": "hl_converted_met_wtd",
         "hl_tp_over_200": "hl_tp_over_200_count_wtd",
+        "hot_total_under": "l1_hot_glids_wtd_under_1_5cr", "hot_mgr_under": "l1_hot_with_mgr_meet_wtd_under_1_5cr",
+        "hp_converted_under": "l1_hot_converted_wtd_under_1_5cr", "hp_converted_met_under": "l1_hot_converted_met_wtd_under_1_5cr",
+        "hp_tp_over_200_under": "l1_hot_tp_over_200_count_wtd_under_1_5cr",
+        "hot_total_over": "l1_hot_glids_wtd_over_1_5cr", "hot_mgr_over": "l1_hot_with_mgr_meet_wtd_over_1_5cr",
+        "hp_converted_over": "l1_hot_converted_wtd_over_1_5cr", "hp_converted_met_over": "l1_hot_converted_met_wtd_over_1_5cr",
+        "hp_tp_over_200_over": "l1_hot_tp_over_200_count_wtd_over_1_5cr",
     },
     "mtd": {
         "sales_count": "month_sales_done", "sales_value": "annual_month_sale_done",
@@ -52,6 +58,12 @@ METRIC_FIELDS = {
         "hl_assigned": "top3_hl_mtd", "hl_l2_met": "hl_l2_met_mtd",
         "hl_converted": "hl_converted_mtd", "hl_converted_met": "hl_converted_met_mtd",
         "hl_tp_over_200": "hl_tp_over_200_count_mtd",
+        "hot_total_under": "l1_hot_glids_mtd_under_1_5cr", "hot_mgr_under": "l1_hot_with_mgr_meet_mtd_under_1_5cr",
+        "hp_converted_under": "l1_hot_converted_mtd_under_1_5cr", "hp_converted_met_under": "l1_hot_converted_met_mtd_under_1_5cr",
+        "hp_tp_over_200_under": "l1_hot_tp_over_200_count_mtd_under_1_5cr",
+        "hot_total_over": "l1_hot_glids_mtd_over_1_5cr", "hot_mgr_over": "l1_hot_with_mgr_meet_mtd_over_1_5cr",
+        "hp_converted_over": "l1_hot_converted_mtd_over_1_5cr", "hp_converted_met_over": "l1_hot_converted_met_mtd_over_1_5cr",
+        "hp_tp_over_200_over": "l1_hot_tp_over_200_count_mtd_over_1_5cr",
     },
     "m1": {
         "sales_count": "sales_done_m1", "sales_value": "annual_sale_done_m1",
@@ -65,6 +77,12 @@ METRIC_FIELDS = {
         "hl_assigned": "top3_hl_m1", "hl_l2_met": "hl_l2_met_m1",
         "hl_converted": "hl_converted_m1", "hl_converted_met": "hl_converted_met_m1",
         "hl_tp_over_200": "hl_tp_over_200_count_m1",
+        "hot_total_under": "l1_hot_glids_m1_under_1_5cr", "hot_mgr_under": "l1_hot_with_mgr_meet_m1_under_1_5cr",
+        "hp_converted_under": "l1_hot_converted_m1_under_1_5cr", "hp_converted_met_under": "l1_hot_converted_met_m1_under_1_5cr",
+        "hp_tp_over_200_under": "l1_hot_tp_over_200_count_m1_under_1_5cr",
+        "hot_total_over": "l1_hot_glids_m1_over_1_5cr", "hot_mgr_over": "l1_hot_with_mgr_meet_m1_over_1_5cr",
+        "hp_converted_over": "l1_hot_converted_m1_over_1_5cr", "hp_converted_met_over": "l1_hot_converted_met_m1_over_1_5cr",
+        "hp_tp_over_200_over": "l1_hot_tp_over_200_count_m1_over_1_5cr",
     },
     "m2": {
         "sales_count": "sales_done_m2", "sales_value": "annual_sale_done_m2",
@@ -154,6 +172,16 @@ def build_node_metrics(rows):
             agg["hp_tp_sum_met"] = 0
             agg["hp_tp_over_200"] = 0
             agg["working_days"] = 0
+            agg["hot_total_under"] = 0
+            agg["hot_mgr_under"] = 0
+            agg["hp_converted_under"] = 0
+            agg["hp_converted_met_under"] = 0
+            agg["hp_tp_over_200_under"] = 0
+            agg["hot_total_over"] = 0
+            agg["hot_mgr_over"] = 0
+            agg["hp_converted_over"] = 0
+            agg["hp_converted_met_over"] = 0
+            agg["hp_tp_over_200_over"] = 0
         has_combined = fields.get("combined_total") is not None
         if has_combined:
             agg["combined_total"] = 0
@@ -185,6 +213,16 @@ def build_node_metrics(rows):
                 agg["hp_tp_sum_met"] += _num(r, fields["hp_tp_sum_met"]) or 0
                 agg["hp_tp_over_200"] += _num(r, fields["hp_tp_over_200"]) or 0
                 agg["working_days"] += _num(r, fields["working_days"]) or 0
+                agg["hot_total_under"] += _num(r, fields["hot_total_under"]) or 0
+                agg["hot_mgr_under"] += _num(r, fields["hot_mgr_under"]) or 0
+                agg["hp_converted_under"] += _num(r, fields["hp_converted_under"]) or 0
+                agg["hp_converted_met_under"] += _num(r, fields["hp_converted_met_under"]) or 0
+                agg["hp_tp_over_200_under"] += _num(r, fields["hp_tp_over_200_under"]) or 0
+                agg["hot_total_over"] += _num(r, fields["hot_total_over"]) or 0
+                agg["hot_mgr_over"] += _num(r, fields["hot_mgr_over"]) or 0
+                agg["hp_converted_over"] += _num(r, fields["hp_converted_over"]) or 0
+                agg["hp_converted_met_over"] += _num(r, fields["hp_converted_met_over"]) or 0
+                agg["hp_tp_over_200_over"] += _num(r, fields["hp_tp_over_200_over"]) or 0
             if has_combined:
                 agg["combined_total"] += _num(r, fields["combined_total"]) or 0
                 agg["combined_l2_met"] += _num(r, fields["combined_l2_met"]) or 0

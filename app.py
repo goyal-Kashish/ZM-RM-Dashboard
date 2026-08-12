@@ -18,9 +18,13 @@ PUSH_TOKEN = os.environ.get("PUSH_TOKEN", "")
 DASHBOARD_TITLE = os.environ.get("DASHBOARD_TITLE", "ZM / RM / Location Performance")
 
 # --- Password protection for the dashboard itself ---
-# Uses a single shared username/password via the browser's built-in login
-# prompt (HTTP Basic Auth) -- not a custom login page, but simple and secure
-# over HTTPS (which Render provides by default).
+# Uses the browser's built-in login prompt (HTTP Basic Auth) -- not a custom
+# login page, but simple and secure over HTTPS (which Render provides by
+# default). Supports multiple individual logins, one per person, via a
+# single env var: DASHBOARD_USERS="rahul:pass123,priya:pass456,amit:pass789"
+# (comma-separated name:password pairs). The older single-pair
+# DASHBOARD_USERNAME/DASHBOARD_PASSWORD still works too, if set, folded into
+# the same list -- so existing setups don't break.
 #
 # The two push endpoints (/api/push-data, /api/push-location-sales) are
 # deliberately EXCLUDED from this check -- those are called by push_local.py,
@@ -29,22 +33,54 @@ DASHBOARD_TITLE = os.environ.get("DASHBOARD_TITLE", "ZM / RM / Location Performa
 # each of those routes below.
 DASHBOARD_USERNAME = os.environ.get("DASHBOARD_USERNAME", "")
 DASHBOARD_PASSWORD = os.environ.get("DASHBOARD_PASSWORD", "")
+DASHBOARD_USERS_RAW = os.environ.get("DASHBOARD_USERS", "")
 _PUSH_ONLY_PATHS = {"/api/push-data", "/api/push-location-sales"}
+
+
+def _parse_dashboard_users():
+    users = {}
+    if DASHBOARD_USERNAME and DASHBOARD_PASSWORD:
+        users[DASHBOARD_USERNAME] = DASHBOARD_PASSWORD
+    for pair in DASHBOARD_USERS_RAW.split(","):
+        pair = pair.strip()
+        if not pair or ":" not in pair:
+            continue
+        name, _, password = pair.partition(":")
+        name, password = name.strip(), password.strip()
+        if name and password:
+            users[name] = password
+    return users
+
+
+DASHBOARD_USERS = _parse_dashboard_users()
 
 
 @app.before_request
 def _require_dashboard_login():
     if request.path in _PUSH_ONLY_PATHS:
         return None
-    if not DASHBOARD_USERNAME or not DASHBOARD_PASSWORD:
+    if not DASHBOARD_USERS:
         return None  # not configured yet -- don't accidentally lock everyone out
     auth = request.authorization
-    if not auth or auth.username != DASHBOARD_USERNAME or auth.password != DASHBOARD_PASSWORD:
+    if not auth or DASHBOARD_USERS.get(auth.username) != auth.password:
         return Response(
             "Login required to view this dashboard.",
             401,
             {"WWW-Authenticate": 'Basic realm="ZM/RM/Location Dashboard"'},
         )
+    # Log a visit using the REAL authenticated username, once per fresh page
+    # load (not on every API call underneath it) -- no self-reporting needed.
+    if request.path == "/":
+        entry = {
+            "name": auth.username,
+            "ts": time.time(),
+            "ip": request.headers.get("X-Forwarded-For", request.remote_addr or ""),
+        }
+        with _lock:
+            _state["visit_log"].append(entry)
+            if len(_state["visit_log"]) > VISIT_LOG_MAX_ENTRIES:
+                _state["visit_log"] = _state["visit_log"][-VISIT_LOG_MAX_ENTRIES:]
+            _save_visit_log()
     return None
 
 
@@ -52,6 +88,8 @@ HIERARCHY_FILE = os.path.join(os.path.dirname(__file__), "hierarchy_upload.xlsx"
 HIERARCHY_CACHE_FILE = os.path.join(os.path.dirname(__file__), "hierarchy_cache.json")
 REDASH_CACHE_FILE = os.path.join(os.path.dirname(__file__), "redash_cache.json")
 LOCATION_SALES_CACHE_FILE = os.path.join(os.path.dirname(__file__), "location_sales_cache.json")
+VISIT_LOG_CACHE_FILE = os.path.join(os.path.dirname(__file__), "visit_log_cache.json")
+VISIT_LOG_MAX_ENTRIES = 2000  # keep the file from growing unbounded over time
 
 _lock = Lock()
 _state = {
@@ -64,6 +102,7 @@ _state = {
     "hierarchy_row_count": 0,
     "computed_by_vertical": {},  # cached merge_and_build_tree() results, keyed by vertical filter
     "_company_headcount_by_rm_location": None,  # cached vertical-independent headcount lookup
+    "visit_log": [],  # [{name, ts, ip}, ...] -- who's opened the dashboard, name self-reported
 }
 
 
@@ -96,6 +135,12 @@ def _load_disk_state():
                 _state["hierarchy_row_count"] = payload.get("row_count", 0)
         except Exception:
             pass
+    if os.path.exists(VISIT_LOG_CACHE_FILE):
+        try:
+            with open(VISIT_LOG_CACHE_FILE, "r") as f:
+                _state["visit_log"] = json.load(f).get("entries", [])
+        except Exception:
+            pass
 
 
 def _save_redash_cache():
@@ -122,6 +167,14 @@ def _save_hierarchy_cache():
                 "uploaded_at": _state["hierarchy_uploaded_at"],
                 "row_count": _state["hierarchy_row_count"],
             }, f)
+    except Exception:
+        pass
+
+
+def _save_visit_log():
+    try:
+        with open(VISIT_LOG_CACHE_FILE, "w") as f:
+            json.dump({"entries": _state["visit_log"]}, f)
     except Exception:
         pass
 
@@ -259,11 +312,20 @@ def hierarchy_status():
     })
 
 
+@app.route("/api/visit-log")
+def visit_log():
+    """Raw visit log, most recent first. Check this URL directly (same
+    site-wide password) to see who's opened the dashboard and when."""
+    with _lock:
+        entries = list(reversed(_state["visit_log"]))
+    return jsonify({"ok": True, "count": len(entries), "entries": entries})
+
+
 # ---------------------------------------------------------------------------
 # Vertical filter (e.g. Inhouse / TC-Channel / Emerging)
 # ---------------------------------------------------------------------------
 VERTICAL_FIELD = "vertical_id"
-VERTICAL_LABELS = {"1": "Inhouse", "56": "TC-Channel", "42": "Emerging", "65": "1.5Cr+"}
+VERTICAL_LABELS = {"1": "Inhouse", "56": "TC-Channel", "42": "Emerging", "65": "HT"}
 
 
 def get_available_verticals(rows):

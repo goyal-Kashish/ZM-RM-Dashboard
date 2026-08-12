@@ -277,6 +277,13 @@
           <div class="multiselect-options" id="location-options"></div>
         </div>
       </div>
+      <label for="turnover-select">Turnover</label>
+      <select id="turnover-select">
+        <option value="all">All Turnover</option>
+        <option value="under">&lt;1.5Cr</option>
+        <option value="over">&ge;1.5Cr</option>
+        <option value="no_gst">No GST</option>
+      </select>
     </div>
   </div>
 
@@ -347,6 +354,8 @@ const locationClearAllBtn = document.getElementById('location-clear-all');
 let currentZmFilter = 'all';
 let currentRmFilter = 'all';
 let currentLocationFilter = [];   // empty array = All Locations (no filter); otherwise the specific selected location names
+let currentTurnoverFilter = 'all';  // 'all' | 'under' | 'over' | 'no_gst' -- currently only scopes the Hot Prospect Funnel (Phase 1); other sections unaffected for now
+const turnoverSelectEl = document.getElementById('turnover-select');
 
 function relativeTime(ts){
   if(!ts) return 'never';
@@ -494,6 +503,16 @@ function sumChildMetrics(children){
         agg.hp_tp_sum_met = (agg.hp_tp_sum_met||0) + (m.hp_tp_sum_met||0);
         agg.hp_tp_over_200 = (agg.hp_tp_over_200||0) + (m.hp_tp_over_200||0);
         agg.working_days = (agg.working_days||0) + (m.working_days||0);
+        agg.hot_total_under = (agg.hot_total_under||0) + (m.hot_total_under||0);
+        agg.hot_mgr_under = (agg.hot_mgr_under||0) + (m.hot_mgr_under||0);
+        agg.hp_converted_under = (agg.hp_converted_under||0) + (m.hp_converted_under||0);
+        agg.hp_converted_met_under = (agg.hp_converted_met_under||0) + (m.hp_converted_met_under||0);
+        agg.hp_tp_over_200_under = (agg.hp_tp_over_200_under||0) + (m.hp_tp_over_200_under||0);
+        agg.hot_total_over = (agg.hot_total_over||0) + (m.hot_total_over||0);
+        agg.hot_mgr_over = (agg.hot_mgr_over||0) + (m.hot_mgr_over||0);
+        agg.hp_converted_over = (agg.hp_converted_over||0) + (m.hp_converted_over||0);
+        agg.hp_converted_met_over = (agg.hp_converted_met_over||0) + (m.hp_converted_met_over||0);
+        agg.hp_tp_over_200_over = (agg.hp_tp_over_200_over||0) + (m.hp_tp_over_200_over||0);
       }
       if('combined_total' in m){
         agg.combined_total = (agg.combined_total||0) + (m.combined_total||0);
@@ -610,6 +629,8 @@ function renderFunnel(){
     sales_count:0, sales_value:0,
     hl_assigned:0, hl_l2_met:0, hl_converted:0, hl_converted_met:0, hl_tp_over_200:0,
     followup_meet:0, with_mgr_meet_general:0,
+    hot_total_under:0, hot_mgr_under:0, hp_converted_under:0, hp_converted_met_under:0, hp_tp_over_200_under:0,
+    hot_total_over:0, hot_mgr_over:0, hp_converted_over:0, hp_converted_met_over:0, hp_tp_over_200_over:0,
   };
   Object.values(tree).forEach(zm => {
     const m = zm.metrics[currentPeriod];
@@ -631,7 +652,44 @@ function renderFunnel(){
     totals.hl_tp_over_200 += m.hl_tp_over_200 || 0;
     totals.followup_meet += m.followup_meet || 0;
     totals.with_mgr_meet_general += m.with_mgr_meet_general || 0;
+    totals.hot_total_under += m.hot_total_under || 0;
+    totals.hot_mgr_under += m.hot_mgr_under || 0;
+    totals.hp_converted_under += m.hp_converted_under || 0;
+    totals.hp_converted_met_under += m.hp_converted_met_under || 0;
+    totals.hp_tp_over_200_under += m.hp_tp_over_200_under || 0;
+    totals.hot_total_over += m.hot_total_over || 0;
+    totals.hot_mgr_over += m.hot_mgr_over || 0;
+    totals.hp_converted_over += m.hp_converted_over || 0;
+    totals.hp_converted_met_over += m.hp_converted_met_over || 0;
+    totals.hp_tp_over_200_over += m.hp_tp_over_200_over || 0;
   });
+
+  // Hot Prospect Funnel numbers, scoped by the Turnover filter. "No GST" is
+  // derived as the honest remainder (total - under - over) -- exact, not an
+  // approximation, since every lead falls into exactly one of the three
+  // buckets by construction. Phase 1 only -- Top 3 HL / Meeting Funnel /
+  // Sales# aren't turnover-scoped yet, so they always show the unfiltered
+  // total regardless of this selector.
+  let hpTotal, hpMgr, hpConverted, hpConvertedMet, hpTpOver200;
+  if(currentTurnoverFilter === 'under'){
+    hpTotal = totals.hot_total_under; hpMgr = totals.hot_mgr_under;
+    hpConverted = totals.hp_converted_under; hpConvertedMet = totals.hp_converted_met_under;
+    hpTpOver200 = totals.hp_tp_over_200_under;
+  } else if(currentTurnoverFilter === 'over'){
+    hpTotal = totals.hot_total_over; hpMgr = totals.hot_mgr_over;
+    hpConverted = totals.hp_converted_over; hpConvertedMet = totals.hp_converted_met_over;
+    hpTpOver200 = totals.hp_tp_over_200_over;
+  } else if(currentTurnoverFilter === 'no_gst'){
+    hpTotal = totals.hot_total - totals.hot_total_under - totals.hot_total_over;
+    hpMgr = totals.hot_mgr - totals.hot_mgr_under - totals.hot_mgr_over;
+    hpConverted = totals.hp_converted - totals.hp_converted_under - totals.hp_converted_over;
+    hpConvertedMet = totals.hp_converted_met - totals.hp_converted_met_under - totals.hp_converted_met_over;
+    hpTpOver200 = totals.hp_tp_over_200 - totals.hp_tp_over_200_under - totals.hp_tp_over_200_over;
+  } else {
+    hpTotal = totals.hot_total; hpMgr = totals.hot_mgr;
+    hpConverted = totals.hp_converted; hpConvertedMet = totals.hp_converted_met;
+    hpTpOver200 = totals.hp_tp_over_200;
+  }
 
   // Meeting Funnel: total meetings (fresh + followup) -> followup meetings ->
   // of those followup meetings, how many had L2 present.
@@ -644,10 +702,10 @@ function renderFunnel(){
   // Two independent funnels -- a lead that's both Hot and HL correctly shows
   // up in BOTH, since these are separate views now, not a summed total.
   const hpStages = [
-    { label: 'Hot Prospects', value: totals.hot_total, pct: null },
-    { label: 'L2 Met', value: totals.hot_mgr, pct: fmtPctSimple(totals.hot_mgr, totals.hot_total) },
-    { label: 'Converted (of all)', value: totals.hp_converted, pct: fmtPctSimple(totals.hp_converted, totals.hot_total) },
-    { label: 'Converted (of L2 Met)', value: totals.hp_converted_met, pct: fmtPctSimple(totals.hp_converted_met, totals.hot_mgr) },
+    { label: 'Hot Prospects', value: hpTotal, pct: null },
+    { label: 'L2 Met', value: hpMgr, pct: fmtPctSimple(hpMgr, hpTotal) },
+    { label: 'Converted (of all)', value: hpConverted, pct: fmtPctSimple(hpConverted, hpTotal) },
+    { label: 'Converted (of L2 Met)', value: hpConvertedMet, pct: fmtPctSimple(hpConvertedMet, hpMgr) },
   ];
   const hlStages = [
     { label: 'Top 3 HL Assigned', value: totals.hl_assigned, pct: null },
@@ -672,7 +730,7 @@ function renderFunnel(){
     { label: 'Avg Daily Meetings', value: fmtRatio(totals.total_meet, totals.working_days) },
     { label: 'Total Sales', value: fmtNum(totals.sales_count) },
     { label: 'Annual Sales', value: fmtNum(totals.sales_value) },
-    { label: '% of HP with TP > 200', value: fmtPctSimple(totals.hp_tp_over_200, totals.hot_total) },
+    { label: '% of HP with TP > 200', value: fmtPctSimple(hpTpOver200, hpTotal) },
     { label: '% of HL with TP > 200', value: fmtPctSimple(totals.hl_tp_over_200, totals.hl_assigned) },
   ];
 
@@ -688,7 +746,7 @@ function renderFunnel(){
     <div class="funnel-wrap">
       <div class="funnel-header">
         <h2>Hot Prospect Funnel</h2>
-        <span class="sub">${escHtml(PERIOD_LABELS[currentPeriod])} — reflects current ZM/RM/Location/Vertical filters</span>
+        <span class="sub">${escHtml(PERIOD_LABELS[currentPeriod])} — reflects current ZM/RM/Location/Vertical filters${currentTurnoverFilter !== 'all' ? ` — Turnover: ${escHtml({under:'<1.5Cr', over:'≥1.5Cr', no_gst:'No GST'}[currentTurnoverFilter])}` : ''}</span>
       </div>
       <div class="funnel-stages">${renderStages(hpStages)}</div>
     </div>
@@ -1059,6 +1117,11 @@ rmSelectEl.addEventListener('change', (e) => {
   renderTree();
   renderFunnel();
 });
+turnoverSelectEl.addEventListener('change', (e) => {
+  currentTurnoverFilter = e.target.value;
+  renderFunnel();
+});
+
 locationTriggerEl.addEventListener('click', (e) => {
   e.stopPropagation();
   const isOpen = !locationPanelEl.hidden;
