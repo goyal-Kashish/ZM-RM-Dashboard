@@ -490,6 +490,14 @@ function sumChildMetrics(children){
       agg.total_meet += m.total_meet || 0;
       agg.followup_meet += m.followup_meet || 0;
       agg.with_mgr_meet_general += m.with_mgr_meet_general || 0;
+      if('total_meet_under' in m){
+        agg.total_meet_under = (agg.total_meet_under||0) + (m.total_meet_under||0);
+        agg.followup_meet_under = (agg.followup_meet_under||0) + (m.followup_meet_under||0);
+        agg.with_mgr_meet_under = (agg.with_mgr_meet_under||0) + (m.with_mgr_meet_under||0);
+        agg.total_meet_over = (agg.total_meet_over||0) + (m.total_meet_over||0);
+        agg.followup_meet_over = (agg.followup_meet_over||0) + (m.followup_meet_over||0);
+        agg.with_mgr_meet_over = (agg.with_mgr_meet_over||0) + (m.with_mgr_meet_over||0);
+      }
       if('hot_total' in m){
         hasHot = true;
         agg.hot_total = (agg.hot_total||0) + (m.hot_total||0);
@@ -631,6 +639,8 @@ function renderFunnel(){
     followup_meet:0, with_mgr_meet_general:0,
     hot_total_under:0, hot_mgr_under:0, hp_converted_under:0, hp_converted_met_under:0, hp_tp_over_200_under:0,
     hot_total_over:0, hot_mgr_over:0, hp_converted_over:0, hp_converted_met_over:0, hp_tp_over_200_over:0,
+    total_meet_under:0, followup_meet_under:0, with_mgr_meet_under:0,
+    total_meet_over:0, followup_meet_over:0, with_mgr_meet_over:0,
   };
   Object.values(tree).forEach(zm => {
     const m = zm.metrics[currentPeriod];
@@ -662,14 +672,34 @@ function renderFunnel(){
     totals.hp_converted_over += m.hp_converted_over || 0;
     totals.hp_converted_met_over += m.hp_converted_met_over || 0;
     totals.hp_tp_over_200_over += m.hp_tp_over_200_over || 0;
+    totals.total_meet_under += m.total_meet_under || 0;
+    totals.followup_meet_under += m.followup_meet_under || 0;
+    totals.with_mgr_meet_under += m.with_mgr_meet_under || 0;
+    totals.total_meet_over += m.total_meet_over || 0;
+    totals.followup_meet_over += m.followup_meet_over || 0;
+    totals.with_mgr_meet_over += m.with_mgr_meet_over || 0;
   });
+
+  // Meeting Funnel numbers, scoped by the Turnover filter (same pattern as
+  // Hot Prospect above -- No GST derived as the honest remainder).
+  let mfTotal, mfFollowup, mfWithMgr;
+  if(currentTurnoverFilter === 'under'){
+    mfTotal = totals.total_meet_under; mfFollowup = totals.followup_meet_under; mfWithMgr = totals.with_mgr_meet_under;
+  } else if(currentTurnoverFilter === 'over'){
+    mfTotal = totals.total_meet_over; mfFollowup = totals.followup_meet_over; mfWithMgr = totals.with_mgr_meet_over;
+  } else if(currentTurnoverFilter === 'no_gst'){
+    mfTotal = totals.total_meet - totals.total_meet_under - totals.total_meet_over;
+    mfFollowup = totals.followup_meet - totals.followup_meet_under - totals.followup_meet_over;
+    mfWithMgr = totals.with_mgr_meet_general - totals.with_mgr_meet_under - totals.with_mgr_meet_over;
+  } else {
+    mfTotal = totals.total_meet; mfFollowup = totals.followup_meet; mfWithMgr = totals.with_mgr_meet_general;
+  }
 
   // Hot Prospect Funnel numbers, scoped by the Turnover filter. "No GST" is
   // derived as the honest remainder (total - under - over) -- exact, not an
   // approximation, since every lead falls into exactly one of the three
-  // buckets by construction. Phase 1 only -- Top 3 HL / Meeting Funnel /
-  // Sales# aren't turnover-scoped yet, so they always show the unfiltered
-  // total regardless of this selector.
+  // buckets by construction. Top 3 HL isn't turnover-scoped yet, so it
+  // always shows the unfiltered total regardless of this selector.
   let hpTotal, hpMgr, hpConverted, hpConvertedMet, hpTpOver200;
   if(currentTurnoverFilter === 'under'){
     hpTotal = totals.hot_total_under; hpMgr = totals.hot_mgr_under;
@@ -694,9 +724,9 @@ function renderFunnel(){
   // Meeting Funnel: total meetings (fresh + followup) -> followup meetings ->
   // of those followup meetings, how many had L2 present.
   const meetingStages = [
-    { label: 'Total Meetings', value: totals.total_meet, pct: null },
-    { label: 'Followup Meetings', value: totals.followup_meet, pct: fmtPctSimple(totals.followup_meet, totals.total_meet) },
-    { label: 'Followup with L2', value: totals.with_mgr_meet_general, pct: fmtPctSimple(totals.with_mgr_meet_general, totals.followup_meet) },
+    { label: 'Total Meetings', value: mfTotal, pct: null },
+    { label: 'Followup Meetings', value: mfFollowup, pct: fmtPctSimple(mfFollowup, mfTotal) },
+    { label: 'Followup with L2', value: mfWithMgr, pct: fmtPctSimple(mfWithMgr, mfFollowup) },
   ];
 
   // Two independent funnels -- a lead that's both Hot and HL correctly shows
@@ -738,7 +768,7 @@ function renderFunnel(){
     <div class="funnel-wrap">
       <div class="funnel-header">
         <h2>Meeting Funnel</h2>
-        <span class="sub">${escHtml(PERIOD_LABELS[currentPeriod])} — reflects current ZM/RM/Location/Vertical filters</span>
+        <span class="sub">${escHtml(PERIOD_LABELS[currentPeriod])} — reflects current ZM/RM/Location/Vertical filters${currentTurnoverFilter !== 'all' ? ` — Turnover: ${escHtml({under:'<1.5Cr', over:'≥1.5Cr', no_gst:'No GST'}[currentTurnoverFilter])}` : ''}</span>
       </div>
       <div class="funnel-stages">${renderStages(meetingStages)}</div>
     </div>
