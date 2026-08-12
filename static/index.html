@@ -546,6 +546,12 @@ function sumChildMetrics(children){
       if(!m) return;
       agg.sales_count += m.sales_count || 0;
       agg.sales_value += m.sales_value || 0;
+      if('sales_count_under' in m){
+        agg.sales_count_under = (agg.sales_count_under||0) + (m.sales_count_under||0);
+        agg.sales_value_under = (agg.sales_value_under||0) + (m.sales_value_under||0);
+        agg.sales_count_over = (agg.sales_count_over||0) + (m.sales_count_over||0);
+        agg.sales_value_over = (agg.sales_value_over||0) + (m.sales_value_over||0);
+      }
       agg.total_meet += m.total_meet || 0;
       agg.followup_meet += m.followup_meet || 0;
       agg.with_mgr_meet_general += m.with_mgr_meet_general || 0;
@@ -714,6 +720,7 @@ function renderFunnel(){
     total_meet_over:0, followup_meet_over:0, with_mgr_meet_over:0,
     hl_assigned_under:0, hl_l2_met_under:0, hl_converted_under:0, hl_converted_met_under:0, hl_tp_over_200_under:0,
     hl_assigned_over:0, hl_l2_met_over:0, hl_converted_over:0, hl_converted_met_over:0, hl_tp_over_200_over:0,
+    sales_count_under:0, sales_value_under:0, sales_count_over:0, sales_value_over:0,
   };
   Object.values(tree).forEach(zm => {
     const m = zm.metrics[currentPeriod];
@@ -761,6 +768,10 @@ function renderFunnel(){
     totals.hl_converted_over += m.hl_converted_over || 0;
     totals.hl_converted_met_over += m.hl_converted_met_over || 0;
     totals.hl_tp_over_200_over += m.hl_tp_over_200_over || 0;
+    totals.sales_count_under += m.sales_count_under || 0;
+    totals.sales_value_under += m.sales_value_under || 0;
+    totals.sales_count_over += m.sales_count_over || 0;
+    totals.sales_value_over += m.sales_value_over || 0;
   });
 
   // Meeting Funnel numbers, scoped by the Turnover filter (same pattern as
@@ -781,8 +792,7 @@ function renderFunnel(){
   // Hot Prospect Funnel numbers, scoped by the Turnover filter. "No GST" is
   // derived as the honest remainder (total - under - over) -- exact, not an
   // approximation, since every lead falls into exactly one of the three
-  // buckets by construction. Top 3 HL isn't turnover-scoped yet, so it
-  // always shows the unfiltered total regardless of this selector.
+  // buckets by construction.
   let hpTotal, hpMgr, hpConverted, hpConvertedMet, hpTpOver200;
   if(currentTurnoverFilter === 'under'){
     hpTotal = totals.hot_total_under; hpMgr = totals.hot_mgr_under;
@@ -869,10 +879,24 @@ function renderFunnel(){
     ? ` — Turnover: ${escHtml({under:'<1.5Cr', over:'≥1.5Cr', no_gst:'No GST'}[currentTurnoverFilter])}`
     : '';
 
+  // Total Sales / Annual Sales, scoped by the Turnover filter (same pattern
+  // as every other section above -- No GST derived as the honest remainder).
+  let salesCount, salesValue;
+  if(currentTurnoverFilter === 'under'){
+    salesCount = totals.sales_count_under; salesValue = totals.sales_value_under;
+  } else if(currentTurnoverFilter === 'over'){
+    salesCount = totals.sales_count_over; salesValue = totals.sales_value_over;
+  } else if(currentTurnoverFilter === 'no_gst'){
+    salesCount = totals.sales_count - totals.sales_count_under - totals.sales_count_over;
+    salesValue = totals.sales_value - totals.sales_value_under - totals.sales_value_over;
+  } else {
+    salesCount = totals.sales_count; salesValue = totals.sales_value;
+  }
+
   const cards = [
     { label: 'Avg Daily Meetings', value: fmtRatio(totals.total_meet, totals.working_days) },
-    { label: 'Total Sales', value: fmtNum(totals.sales_count) },
-    { label: 'Annual Sales', value: fmtNum(totals.sales_value) },
+    { label: 'Total Sales', value: fmtNum(salesCount) },
+    { label: 'Annual Sales', value: fmtNum(salesValue) },
     { label: '% of HP with TP > 200', value: fmtPctSimple(hpTpOver200, hpTotal) },
     { label: '% of HL with TP > 200', value: fmtPctSimple(hlTpOver200, hlTotal) },
   ];

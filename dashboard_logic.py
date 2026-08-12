@@ -29,6 +29,8 @@ METRIC_FIELDS = {
     },
     "wtd": {
         "sales_count": "week_sales_done", "sales_value": "annual_week_sale_done",
+        "sales_count_under": "sale_done_wtd_under_1_5cr", "sales_value_under": "annual_sale_done_wtd_under_1_5cr",
+        "sales_count_over": "sale_done_wtd_over_1_5cr", "sales_value_over": "annual_sale_done_wtd_over_1_5cr",
         "hot_total": "l1_hot_glids_wtd", "hot_self": "l1_hot_self_meet_wtd", "hot_mgr": "l1_hot_with_mgr_meet_wtd",
         "total_meet": "total_meet_wtd", "fresh_meet": "fresh_meet_wtd", "followup_meet": "followup_meet_wtd", "with_mgr_meet_general": "with_mgr_meet_wtd",
         "total_meet_under": "total_meet_wtd_under_1_5cr", "followup_meet_under": "followup_meet_wtd_under_1_5cr", "with_mgr_meet_under": "with_mgr_meet_wtd_under_1_5cr",
@@ -56,6 +58,8 @@ METRIC_FIELDS = {
     },
     "mtd": {
         "sales_count": "month_sales_done", "sales_value": "annual_month_sale_done",
+        "sales_count_under": "month_sale_done_under_1_5cr", "sales_value_under": "annual_month_sale_done_under_1_5cr",
+        "sales_count_over": "month_sale_done_over_1_5cr", "sales_value_over": "annual_month_sale_done_over_1_5cr",
         "hot_total": "l1_hot_glids_mtd", "hot_self": "l1_hot_self_meet_mtd", "hot_mgr": "l1_hot_with_mgr_meet_mtd",
         "total_meet": "total_meet_mtd", "fresh_meet": "fresh_meet_mtd", "followup_meet": "followup_meet_mtd", "with_mgr_meet_general": "with_mgr_meet_mtd",
         "total_meet_under": "total_meet_mtd_under_1_5cr", "followup_meet_under": "followup_meet_mtd_under_1_5cr", "with_mgr_meet_under": "with_mgr_meet_mtd_under_1_5cr",
@@ -83,6 +87,8 @@ METRIC_FIELDS = {
     },
     "m1": {
         "sales_count": "sales_done_m1", "sales_value": "annual_sale_done_m1",
+        "sales_count_under": "sale_done_m1_under_1_5cr", "sales_value_under": "annual_sale_done_m1_under_1_5cr",
+        "sales_count_over": "sale_done_m1_over_1_5cr", "sales_value_over": "annual_sale_done_m1_over_1_5cr",
         "hot_total": "l1_hot_glids_m1", "hot_self": "l1_hot_self_meet_m1", "hot_mgr": "l1_hot_with_mgr_meet_m1",
         "total_meet": "total_meet_m1", "fresh_meet": "fresh_meet_m1", "followup_meet": "followup_meet_m1", "with_mgr_meet_general": "with_mgr_meet_m1",
         "total_meet_under": "total_meet_m1_under_1_5cr", "followup_meet_under": "followup_meet_m1_under_1_5cr", "with_mgr_meet_under": "with_mgr_meet_m1_under_1_5cr",
@@ -241,9 +247,20 @@ def build_node_metrics(rows):
             agg["total_meet_over"] = 0
             agg["followup_meet_over"] = 0
             agg["with_mgr_meet_over"] = 0
+        has_sales_turnover = fields.get("sales_count_under") is not None
+        if has_sales_turnover:
+            agg["sales_count_under"] = 0
+            agg["sales_value_under"] = 0
+            agg["sales_count_over"] = 0
+            agg["sales_value_over"] = 0
         for r in rows:
             agg["sales_count"] += _num(r, fields["sales_count"]) or 0
             agg["sales_value"] += _num(r, fields["sales_value"]) or 0
+            if has_sales_turnover:
+                agg["sales_count_under"] += _num(r, fields["sales_count_under"]) or 0
+                agg["sales_value_under"] += _num(r, fields["sales_value_under"]) or 0
+                agg["sales_count_over"] += _num(r, fields["sales_count_over"]) or 0
+                agg["sales_value_over"] += _num(r, fields["sales_value_over"]) or 0
             agg["total_meet"] += _num(r, fields["total_meet"]) or 0
             agg["followup_meet"] += _num(r, fields["followup_meet"]) or 0
             agg["with_mgr_meet_general"] += _num(r, fields["with_mgr_meet_general"]) or 0
