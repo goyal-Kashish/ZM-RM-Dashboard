@@ -121,7 +121,7 @@
   .tree-panel{ background:var(--panel); border:1px solid var(--hairline); border-radius:var(--radius); overflow:hidden; }
   .tree-header, .tree-row{
     display:grid; align-items:center;
-    grid-template-columns: minmax(220px,2.2fr) 70px repeat(5, 100px);
+    grid-template-columns: minmax(200px,2fr) 60px repeat(7, 90px);
     gap:6px; padding:9px 14px;
   }
   .tree-header{
@@ -245,7 +245,7 @@
   .funnel-card .value{ font-family:Consolas,monospace; font-size:20px; font-weight:700; color:var(--text); font-variant-numeric:tabular-nums; }
 
   @media (max-width: 900px){
-    .tree-header, .tree-row{ grid-template-columns: minmax(160px,1.6fr) 50px repeat(5, 80px); font-size:11px; }
+    .tree-header, .tree-row{ grid-template-columns: minmax(150px,1.4fr) 45px repeat(7, 70px); font-size:11px; }
   }
 </style>
 </head>
@@ -486,50 +486,42 @@ function updateLocationTriggerLabel(){
 // ---------------------------------------------------------------------
 // Top-ZM bar chart
 // ---------------------------------------------------------------------
-// Per-employee HP/HL numbers, scoped by the current Turnover filter.
-// "All Turnover" uses the combined (deduplicated) metric, same as always.
-// A specific bucket uses HP-scoped + HL-scoped added together instead --
-// there's no turnover-scoped version of the deduplicated combined metric
-// (that would need redoing the same large SQL chain a third time), so this
-// is a labelled approximation: a lead that's both Hot and HL and in this
-// specific bucket could count twice here, unlike the always-exact combined
-// total shown under "All Turnover".
+// Generic "scope this field by the current Turnover filter" helper. Works
+// for any metrics object (ZM/RM/Location tree nodes or per-employee rows)
+// and any base field that has _under/_over turnover-scoped counterparts
+// (sales_count, combined_total, combined_l2_met, combined_converted,
+// combined_converted_met, total_meet). "No GST" is the honest remainder
+// (total - under - over) -- exact, since every lead falls into exactly one
+// of the three buckets by construction. Falls back to the plain unscoped
+// value if this field was never turnover-split (older pushed data) or "All
+// Turnover" is selected.
+function scopedValue(metrics, baseField){
+  if(!metrics) return 0;
+  if(currentTurnoverFilter === 'all' || metrics[baseField+'_under'] === undefined) return metrics[baseField] || 0;
+  if(currentTurnoverFilter === 'under') return metrics[baseField+'_under'] || 0;
+  if(currentTurnoverFilter === 'over') return metrics[baseField+'_over'] || 0;
+  if(currentTurnoverFilter === 'no_gst') return (metrics[baseField]||0) - (metrics[baseField+'_under']||0) - (metrics[baseField+'_over']||0);
+  return metrics[baseField] || 0;
+}
+
+// Per-employee HP/HL (combined, deduplicated) numbers, scoped by the current
+// Turnover filter. Exact -- combined_total_under/over etc are computed
+// directly per employee (same dedup logic as the unscoped "All Turnover"
+// total, just split by turnover bucket), not approximated by adding
+// separate HP-scoped and HL-scoped numbers together.
 function empScopedMetrics(m){
-  if(!m) return { total:0, l2met:0, converted:0, convertedMet:0 };
-  if(currentTurnoverFilter === 'all' || m.hot_total_under === undefined){
-    return {
-      total: m.combined_total || 0, l2met: m.combined_l2_met || 0,
-      converted: m.combined_converted || 0, convertedMet: m.combined_converted_met || 0,
-    };
-  }
-  const pick = (base) => {
-    if(currentTurnoverFilter === 'under') return m[base+'_under'] || 0;
-    if(currentTurnoverFilter === 'over') return m[base+'_over'] || 0;
-    if(currentTurnoverFilter === 'no_gst') return (m[base]||0) - (m[base+'_under']||0) - (m[base+'_over']||0);
-    return m[base] || 0;
-  };
   return {
-    total: pick('hot_total') + pick('hl_assigned'),
-    l2met: pick('hot_mgr') + pick('hl_l2_met'),
-    converted: pick('hp_converted') + pick('hl_converted'),
-    convertedMet: pick('hp_converted_met') + pick('hl_converted_met'),
+    total: scopedValue(m, 'combined_total'), l2met: scopedValue(m, 'combined_l2_met'),
+    converted: scopedValue(m, 'combined_converted'), convertedMet: scopedValue(m, 'combined_converted_met'),
   };
 }
 
-// Per-employee Total Meet, scoped by the current Turnover filter. Unlike
-// empScopedMetrics above, this is EXACT, not an approximation -- the
-// Meeting Funnel's turnover split already computes total_meet_under/over
-// directly per employee, no summing-across-funnels needed. Fresh % stays
-// unscoped regardless of this filter -- fresh_meet itself was never split
-// by turnover, so pairing a scoped total with an unscoped fresh count would
-// produce a meaningless (or >100%) percentage.
+// Per-employee Total Meet, scoped by the current Turnover filter. Fresh %
+// stays unscoped regardless of this filter -- fresh_meet itself was never
+// split by turnover, so pairing a scoped total with an unscoped fresh count
+// would produce a meaningless (or >100%) percentage.
 function empScopedTotalMeet(m){
-  if(!m) return 0;
-  if(currentTurnoverFilter === 'all' || m.total_meet_under === undefined) return m.total_meet || 0;
-  if(currentTurnoverFilter === 'under') return m.total_meet_under || 0;
-  if(currentTurnoverFilter === 'over') return m.total_meet_over || 0;
-  if(currentTurnoverFilter === 'no_gst') return (m.total_meet||0) - (m.total_meet_under||0) - (m.total_meet_over||0);
-  return m.total_meet || 0;
+  return scopedValue(m, 'total_meet');
 }
 
 function sumChildMetrics(children){
@@ -592,6 +584,16 @@ function sumChildMetrics(children){
         agg.combined_l2_met = (agg.combined_l2_met||0) + (m.combined_l2_met||0);
         agg.combined_converted = (agg.combined_converted||0) + (m.combined_converted||0);
         agg.combined_converted_met = (agg.combined_converted_met||0) + (m.combined_converted_met||0);
+      }
+      if('combined_total_under' in m){
+        agg.combined_total_under = (agg.combined_total_under||0) + (m.combined_total_under||0);
+        agg.combined_l2_met_under = (agg.combined_l2_met_under||0) + (m.combined_l2_met_under||0);
+        agg.combined_converted_under = (agg.combined_converted_under||0) + (m.combined_converted_under||0);
+        agg.combined_converted_met_under = (agg.combined_converted_met_under||0) + (m.combined_converted_met_under||0);
+        agg.combined_total_over = (agg.combined_total_over||0) + (m.combined_total_over||0);
+        agg.combined_l2_met_over = (agg.combined_l2_met_over||0) + (m.combined_l2_met_over||0);
+        agg.combined_converted_over = (agg.combined_converted_over||0) + (m.combined_converted_over||0);
+        agg.combined_converted_met_over = (agg.combined_converted_met_over||0) + (m.combined_converted_met_over||0);
       }
       if('hl_assigned' in m){
         agg.hl_assigned = (agg.hl_assigned||0) + (m.hl_assigned||0);
@@ -658,19 +660,22 @@ function getFilteredTree(){
 // ---------------------------------------------------------------------
 function metricCells(metrics, period){
   const showHot = hasHotFields(period);
-  const cells = [ fmtNum(metrics.sales_count) ];
+  const cells = [ fmtNum(scopedValue(metrics, 'sales_count')) ];
   if(showHot){
     // Uses the deduplicated combined Hot Prospect + Top 3 HL total (a lead
     // counted once even if it's both), matching the funnel above and the
     // employee-level HP/HL column — not the old Hot-Prospect-only figure.
-    const combinedTotal = metrics.combined_total || 0;
-    const combinedL2Met = metrics.combined_l2_met || 0;
-    const combinedSelf = combinedTotal - combinedL2Met;
-    cells.push(fmtNum(combinedTotal), fmtNum(combinedSelf), fmtNum(combinedL2Met));
+    // Scoped by the current Turnover filter, exact (not approximated).
+    const s = empScopedMetrics(metrics);
+    const metAlone = s.total - s.l2met;
+    cells.push(fmtNum(s.total), fmtNum(s.l2met), fmtNum(metAlone), fmtNum(s.converted), fmtNum(s.convertedMet));
   } else {
-    cells.push('<span class="empty-cell">—</span>','<span class="empty-cell">—</span>','<span class="empty-cell">—</span>');
+    cells.push(
+      '<span class="empty-cell">—</span>','<span class="empty-cell">—</span>','<span class="empty-cell">—</span>',
+      '<span class="empty-cell">—</span>','<span class="empty-cell">—</span>'
+    );
   }
-  cells.push(fmtNum(metrics.total_meet));
+  cells.push(fmtNum(empScopedTotalMeet(metrics)));
   return cells;
 }
 function escHtml(s){ return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
@@ -973,10 +978,12 @@ function renderTree(){
   let html = `<div class="tree-panel">`;
   html += `<div class="tree-header">
     <div>Name</div><div class="num">HC</div>
-    <div class="num">Sales #</div>
-    <div class="num">${showHot ? 'HP/HL' : 'Meetings'}</div>
-    <div class="num">${showHot ? 'Self' : ''}</div>
-    <div class="num">${showHot ? 'With Mgr' : ''}</div>
+    <div class="num">Total Sales</div>
+    <div class="num">${showHot ? 'HP/HL Total' : 'Meetings'}</div>
+    <div class="num">${showHot ? 'Met with Mgr' : ''}</div>
+    <div class="num">${showHot ? 'Met Alone' : ''}</div>
+    <div class="num">${showHot ? 'Sales on Them' : ''}</div>
+    <div class="num">${showHot ? 'Sales on Them (Mgr)' : ''}</div>
     <div class="num">${showHot ? 'Total Meet' : ''}</div>
   </div>`;
 
@@ -1038,7 +1045,7 @@ function renderTree(){
                   <div class="emp-name-head">Name</div>
                   <div class="emp-num">Tenure</div>
                   <div class="emp-num">Total Sales</div>
-                  <div class="emp-num" title="${currentTurnoverFilter!=='all' ? 'Turnover filter active: approximated as HP-scoped + HL-scoped added together (may slightly double-count a lead that is both).' : ''}">HP/HL Total</div>
+                  <div class="emp-num">HP/HL Total</div>
                   <div class="emp-num">Met with Mgr</div>
                   <div class="emp-num">Met Alone</div>
                   <div class="emp-num">Sales on Them</div>

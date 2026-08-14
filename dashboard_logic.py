@@ -40,6 +40,10 @@ METRIC_FIELDS = {
         "hp_tp_over_200": "l1_hot_tp_over_200_count_wtd", "working_days": "working_days_wtd",
         "combined_total": "combined_total_wtd", "combined_l2_met": "combined_l2_met_wtd",
         "combined_converted": "combined_converted_wtd", "combined_converted_met": "combined_converted_met_wtd",
+        "combined_total_under": "combined_total_wtd_under_1_5cr", "combined_l2_met_under": "combined_l2_met_wtd_under_1_5cr",
+        "combined_converted_under": "combined_converted_wtd_under_1_5cr", "combined_converted_met_under": "combined_converted_met_wtd_under_1_5cr",
+        "combined_total_over": "combined_total_wtd_over_1_5cr", "combined_l2_met_over": "combined_l2_met_wtd_over_1_5cr",
+        "combined_converted_over": "combined_converted_wtd_over_1_5cr", "combined_converted_met_over": "combined_converted_met_wtd_over_1_5cr",
         "hl_assigned": "top3_hl_wtd", "hl_l2_met": "hl_l2_met_wtd",
         "hl_converted": "hl_converted_wtd", "hl_converted_met": "hl_converted_met_wtd",
         "hl_tp_over_200": "hl_tp_over_200_count_wtd",
@@ -69,6 +73,10 @@ METRIC_FIELDS = {
         "hp_tp_over_200": "l1_hot_tp_over_200_count_mtd", "working_days": "working_days_mtd",
         "combined_total": "combined_total_mtd", "combined_l2_met": "combined_l2_met_mtd",
         "combined_converted": "combined_converted_mtd", "combined_converted_met": "combined_converted_met_mtd",
+        "combined_total_under": "combined_total_mtd_under_1_5cr", "combined_l2_met_under": "combined_l2_met_mtd_under_1_5cr",
+        "combined_converted_under": "combined_converted_mtd_under_1_5cr", "combined_converted_met_under": "combined_converted_met_mtd_under_1_5cr",
+        "combined_total_over": "combined_total_mtd_over_1_5cr", "combined_l2_met_over": "combined_l2_met_mtd_over_1_5cr",
+        "combined_converted_over": "combined_converted_mtd_over_1_5cr", "combined_converted_met_over": "combined_converted_met_mtd_over_1_5cr",
         "hl_assigned": "top3_hl_mtd", "hl_l2_met": "hl_l2_met_mtd",
         "hl_converted": "hl_converted_mtd", "hl_converted_met": "hl_converted_met_mtd",
         "hl_tp_over_200": "hl_tp_over_200_count_mtd",
@@ -98,6 +106,10 @@ METRIC_FIELDS = {
         "hp_tp_over_200": "l1_hot_tp_over_200_count_m1", "working_days": "working_days_m1",
         "combined_total": "combined_total_m1", "combined_l2_met": "combined_l2_met_m1",
         "combined_converted": "combined_converted_m1", "combined_converted_met": "combined_converted_met_m1",
+        "combined_total_under": "combined_total_m1_under_1_5cr", "combined_l2_met_under": "combined_l2_met_m1_under_1_5cr",
+        "combined_converted_under": "combined_converted_m1_under_1_5cr", "combined_converted_met_under": "combined_converted_met_m1_under_1_5cr",
+        "combined_total_over": "combined_total_m1_over_1_5cr", "combined_l2_met_over": "combined_l2_met_m1_over_1_5cr",
+        "combined_converted_over": "combined_converted_m1_over_1_5cr", "combined_converted_met_over": "combined_converted_met_m1_over_1_5cr",
         "hl_assigned": "top3_hl_m1", "hl_l2_met": "hl_l2_met_m1",
         "hl_converted": "hl_converted_m1", "hl_converted_met": "hl_converted_met_m1",
         "hl_tp_over_200": "hl_tp_over_200_count_m1",
@@ -218,6 +230,16 @@ def build_node_metrics(rows):
             agg["combined_l2_met"] = 0
             agg["combined_converted"] = 0
             agg["combined_converted_met"] = 0
+        has_combined_turnover = fields.get("combined_total_under") is not None
+        if has_combined_turnover:
+            agg["combined_total_under"] = 0
+            agg["combined_l2_met_under"] = 0
+            agg["combined_converted_under"] = 0
+            agg["combined_converted_met_under"] = 0
+            agg["combined_total_over"] = 0
+            agg["combined_l2_met_over"] = 0
+            agg["combined_converted_over"] = 0
+            agg["combined_converted_met_over"] = 0
         has_hl_assigned = fields.get("hl_assigned") is not None
         if has_hl_assigned:
             agg["hl_assigned"] = 0
@@ -296,6 +318,15 @@ def build_node_metrics(rows):
                 agg["combined_l2_met"] += _num(r, fields["combined_l2_met"]) or 0
                 agg["combined_converted"] += _num(r, fields["combined_converted"]) or 0
                 agg["combined_converted_met"] += _num(r, fields["combined_converted_met"]) or 0
+            if has_combined_turnover:
+                agg["combined_total_under"] += _num(r, fields["combined_total_under"]) or 0
+                agg["combined_l2_met_under"] += _num(r, fields["combined_l2_met_under"]) or 0
+                agg["combined_converted_under"] += _num(r, fields["combined_converted_under"]) or 0
+                agg["combined_converted_met_under"] += _num(r, fields["combined_converted_met_under"]) or 0
+                agg["combined_total_over"] += _num(r, fields["combined_total_over"]) or 0
+                agg["combined_l2_met_over"] += _num(r, fields["combined_l2_met_over"]) or 0
+                agg["combined_converted_over"] += _num(r, fields["combined_converted_over"]) or 0
+                agg["combined_converted_met_over"] += _num(r, fields["combined_converted_met_over"]) or 0
             if has_hl_assigned:
                 agg["hl_assigned"] += _num(r, fields["hl_assigned"]) or 0
             if has_hl_funnel:
@@ -381,6 +412,14 @@ def build_employee_summary(row):
             "combined_l2_met": _num(row, fields["combined_l2_met"]) or 0,
             "combined_converted": _num(row, fields["combined_converted"]) or 0,
             "combined_converted_met": _num(row, fields["combined_converted_met"]) or 0,
+            "combined_total_under": _num(row, fields["combined_total_under"]) or 0,
+            "combined_l2_met_under": _num(row, fields["combined_l2_met_under"]) or 0,
+            "combined_converted_under": _num(row, fields["combined_converted_under"]) or 0,
+            "combined_converted_met_under": _num(row, fields["combined_converted_met_under"]) or 0,
+            "combined_total_over": _num(row, fields["combined_total_over"]) or 0,
+            "combined_l2_met_over": _num(row, fields["combined_l2_met_over"]) or 0,
+            "combined_converted_over": _num(row, fields["combined_converted_over"]) or 0,
+            "combined_converted_met_over": _num(row, fields["combined_converted_met_over"]) or 0,
             "total_meet": _num(row, fields["total_meet"]) or 0,
             "fresh_meet": _num(row, fields["fresh_meet"]) or 0,
             "avg_talktime": row.get(TALKTIME_FIELD_BY_PERIOD[period]),
