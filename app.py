@@ -92,6 +92,7 @@ LOCATION_SALES_CACHE_FILE = os.path.join(os.path.dirname(__file__), "location_sa
 VISIT_LOG_CACHE_FILE = os.path.join(os.path.dirname(__file__), "visit_log_cache.json")
 SALES_CACHE_FILE = os.path.join(os.path.dirname(__file__), "sales_cache.json")
 APPINSTALL_CACHE_FILE = os.path.join(os.path.dirname(__file__), "appinstall_cache.json")
+PERF_CACHE_FILE = os.path.join(os.path.dirname(__file__), "perf_cache.json")
 VISIT_LOG_MAX_ENTRIES = 2000  # keep the file from growing unbounded over time
 
 _lock = Lock()
@@ -110,6 +111,8 @@ _state = {
     "sales_uploaded_at": 0,
     "appinstall": None,       # parsed app-install dump (see ingest.parse_appinstall_dump)
     "appinstall_uploaded_at": 0,
+    "perf": None,             # last-3-weeks/MTD query (see ingest.parse_perf_rows)
+    "perf_uploaded_at": 0,
     "_prepared": None,        # cached sales/app overlay on top of the Redash rows
 }
 
@@ -164,7 +167,8 @@ def _load_disk_state():
                 _state["visit_log"] = json.load(f).get("entries", [])
         except Exception:
             pass
-    for key, path in (("sales", SALES_CACHE_FILE), ("appinstall", APPINSTALL_CACHE_FILE)):
+    for key, path in (("sales", SALES_CACHE_FILE), ("appinstall", APPINSTALL_CACHE_FILE),
+                      ("perf", PERF_CACHE_FILE)):
         if os.path.exists(path):
             try:
                 with open(path, "r") as f:
@@ -450,6 +454,28 @@ def push_appinstall():
                     "period_labels": parsed["period_labels"]})
 
 
+@app.route("/api/push-perf", methods=["POST"])
+def push_perf():
+    """Last-3-weeks / MTD performance query, pre-crunched by push_local.py
+    (ingest.parse_perf_rows) so only a compact result travels."""
+    if not PUSH_TOKEN:
+        return jsonify({"ok": False, "error": "Server has no PUSH_TOKEN configured"}), 500
+    if request.headers.get("X-Push-Token", "") != PUSH_TOKEN:
+        return jsonify({"ok": False, "error": "unauthorized"}), 401
+    payload = request.get_json(force=True, silent=True) or {}
+    parsed = payload.get("parsed")
+    if not isinstance(parsed, dict) or not isinstance(parsed.get("emp"), dict) \
+            or not isinstance(parsed.get("leads"), list):
+        return jsonify({"ok": False, "error": "Expected JSON body like {\"parsed\": {\"emp\": {...}, \"leads\": [...]}}"}), 400
+    with _lock:
+        _state["perf"] = parsed
+        _state["perf_uploaded_at"] = time.time()
+        _invalidate()
+        _save_json(PERF_CACHE_FILE, parsed, _state["perf_uploaded_at"])
+    return jsonify({"ok": True, "employees": len(parsed["emp"]), "leads": len(parsed["leads"]),
+                    "period_labels": parsed.get("period_labels")})
+
+
 @app.route("/api/upload-appinstall-status")
 def upload_appinstall_status():
     return jsonify(dict(_appinstall_job, ok=True))
@@ -500,6 +526,7 @@ def _prepared():
     Must be called with _lock held."""
     if _state["_prepared"] is None:
         rows, sales_extras = ingest.overlay_sales_on_rows(_state["redash_rows"], _state["sales"])
+        rows = ingest.overlay_perf_on_rows(rows, _state["perf"], _state["sales"])
         app_emp, app_extras = ingest.app_by_employee(rows, _state["appinstall"])
         _state["_prepared"] = {
             "rows": rows, "sales_extras": sales_extras,
@@ -589,7 +616,15 @@ def api_dashboard_data():
         payload["unmatched_locations"] = computed.get("unmatched_locations", [])
         payload["served_at"] = time.time()
         payload["selected_vertical"] = vertical
-        payload["available_periods"] = ingest.available_periods(_state["redash_rows"], ["wtd", "mtd", "m1"])
+        # With the last-3-weeks query pushed, the Performance tabs match the
+        # App Install ones (3 weeks, last 3 weeks, MTD); otherwise WTD / MTD
+        # straight from the main query.
+        perf = _state["perf"]
+        payload["available_periods"] = (["w3", "w2", "w1", "l3w", "mtd"] if perf
+                                        else ingest.available_periods(_state["redash_rows"], ["wtd", "mtd"]))
+        payload["perf_period_labels"] = (perf or {}).get("period_labels", {})
+        payload["perf_meta"] = None if perf is None else {
+            "uploaded_at": _state["perf_uploaded_at"], "as_of": perf.get("as_of"), "stats": perf.get("stats", {})}
         payload["app_periods"] = ingest.APP_PERIODS
         payload["app_period_labels"] = (_state["appinstall"] or {}).get("period_labels", {})
         payload["sales_meta"] = None if _state["sales"] is None else {
