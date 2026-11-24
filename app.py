@@ -423,6 +423,31 @@ def upload_appinstall():
     return jsonify({"ok": True, "processing": True})
 
 
+@app.route("/api/push-appinstall", methods=["POST"])
+def push_appinstall():
+    """Automated path for the app-install query (Redash 52336). push_local.py
+    fetches the ~100k meeting rows on the laptop, runs the same
+    ingest.parse_appinstall_rows() there, and sends only the per-L1 result
+    (a few hundred KB) -- so Render never has to hold the raw meetings."""
+    if not PUSH_TOKEN:
+        return jsonify({"ok": False, "error": "Server has no PUSH_TOKEN configured"}), 500
+    if request.headers.get("X-Push-Token", "") != PUSH_TOKEN:
+        return jsonify({"ok": False, "error": "unauthorized"}), 401
+    payload = request.get_json(force=True, silent=True) or {}
+    parsed = payload.get("parsed")
+    if not isinstance(parsed, dict) or not isinstance(parsed.get("by_owner"), dict) \
+            or not isinstance(parsed.get("period_labels"), dict):
+        return jsonify({"ok": False, "error": "Expected JSON body like {\"parsed\": {\"by_owner\": {...}, \"period_labels\": {...}}}"}), 400
+    parsed.setdefault("stats", {})
+    with _lock:
+        _state["appinstall"] = parsed
+        _state["appinstall_uploaded_at"] = time.time()
+        _invalidate()
+        _save_json(APPINSTALL_CACHE_FILE, parsed, _state["appinstall_uploaded_at"])
+    return jsonify({"ok": True, "employees": len(parsed["by_owner"]), "stats": parsed["stats"],
+                    "period_labels": parsed["period_labels"]})
+
+
 @app.route("/api/upload-appinstall-status")
 def upload_appinstall_status():
     return jsonify(dict(_appinstall_job, ok=True))

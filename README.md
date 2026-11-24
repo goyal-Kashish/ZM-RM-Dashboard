@@ -81,7 +81,7 @@ your PC.
 |---|---|---|
 | HC sheet (`Required_HC_...xlsx`) | weekly | ZM / RM / AM mapping |
 | Sales dump (receipt export .xlsx) | daily | Total Sales + Annual Sales (WTD / MTD) |
-| App install dump (ClickHouse meeting-level export) | daily | the App Install view |
+| App install dump (ClickHouse meeting-level export) | only if the automatic push fails | the App Install view |
 
 Sales rules applied to the dump: date = `Entered On`; `Receipt Status` in
 Cleared / Pending; `Sale Status` in Hosted / Unused; one sale per receipt;
@@ -96,12 +96,18 @@ meeting, Installed After = installed on/after it, Not Installed = still no app.
 Drive % = Installed After / (Installed After + Not Installed). The app-install
 file takes ~15-30 s to process; the page shows progress and refreshes itself.
 
+**App install is automatic.** `push_local.py` also fetches Redash query
+52336 (set `REDASH_QUERY_ID_APP_INSTALL=52336`, already in `daily_push.bat`),
+crunches the ~100k meetings on your PC and pushes only the per-L1 totals.
+If a query's cached Redash result isn't from today, the script re-runs it in
+Redash first and waits. The App install upload button stays as a backup.
+
 **After every redeploy on Render** the server forgets everything: run
 `push_local.py` once, then upload the HC sheet, sales dump and app-install dump.
 
 ## What stays the same day-to-day
 
-- **You**: run `push_local.py` daily and upload the sales + app-install dumps;
+- **You**: run `push_local.py` daily (main query + app install) and upload the sales dump;
   upload the HC sheet weekly.
 - **Everyone else**: just opens the permanent URL.
 
