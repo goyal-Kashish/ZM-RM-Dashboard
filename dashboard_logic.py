@@ -11,7 +11,10 @@ from collections import defaultdict
 # source query (e.g. the hot-meeting self/manager split isn't tracked
 # per-month, only Overall/WTD/MTD).
 # ---------------------------------------------------------------------------
-PERIODS = ["overall", "wtd", "mtd", "m1", "m2", "m3", "m4"]
+# Periods the current queries actually produce. (M1-M4 / "overall" were
+# dropped from query 14600; their METRIC_FIELDS entries are kept below only so
+# old code paths that look them up don't break.)
+PERIODS = ["wtd", "mtd"]
 
 PERIOD_LABELS = {
     "overall": "Overall", "wtd": "WTD", "mtd": "MTD",
@@ -151,6 +154,19 @@ METRIC_FIELDS = {
         "hl_assigned": "top3_hl_m4", "hl_l2_met": None, "hl_converted": None, "hl_converted_met": None, "hl_tp_over_200": None,
     },
 }
+
+# Week / last-3-weeks periods fed by the companion "L1 performance by period"
+# query (+ the sales dump). Their column names follow the WTD ones with "wtd"
+# swapped for the period key, e.g. combined_total_wtd -> combined_total_w1.
+WEEK_PERIODS = ["w1", "w2", "w3", "l3w"]
+for _p in WEEK_PERIODS:
+    METRIC_FIELDS[_p] = {k: (v.replace("wtd", _p) if v else v) for k, v in METRIC_FIELDS["wtd"].items()}
+    METRIC_FIELDS[_p].update({
+        "sales_count": f"sales_done_{_p}", "sales_value": f"annual_sale_done_{_p}",
+        "sales_count_under": f"sale_done_{_p}_under_1_5cr", "sales_value_under": f"annual_sale_done_{_p}_under_1_5cr",
+        "sales_count_over": f"sale_done_{_p}_over_1_5cr", "sales_value_over": f"annual_sale_done_{_p}_over_1_5cr",
+    })
+PERIODS += WEEK_PERIODS
 
 UNDERPERFORMER_METRIC = "month_sales_done"   # MTD sales count (from the sales dump); ranks within each location group
 UNDERPERFORMER_PCT = 0.20              # bottom 20% flagged, minimum 1 per group if group is non-empty
@@ -377,13 +393,14 @@ def tree_payload(result):
     }
 
 
-EMPLOYEE_SUMMARY_PERIODS = ["wtd", "mtd", "m1"]
+EMPLOYEE_SUMMARY_PERIODS = ["wtd", "mtd", "w1", "w2", "w3", "l3w"]
 
 
 TALKTIME_FIELD_BY_PERIOD = {
     "wtd": "avg_tt_hhmmss_wtd",
     "mtd": "avg_tt_hhmmss_mtd",
     "m1": "avg_tt_hhmmss_m1",
+    "w1": "avg_tt_hhmmss_w1", "w2": "avg_tt_hhmmss_w2", "w3": "avg_tt_hhmmss_w3", "l3w": "avg_tt_hhmmss_l3w",
 }
 
 
