@@ -632,6 +632,7 @@ def api_dashboard_data():
         payload["available_periods"] = (["wtd", "w3", "w2", "w1", "l3w", "mtd"] if perf
                                         else ingest.available_periods(_state["redash_rows"], ["wtd", "mtd"]))
         payload["perf_period_labels"] = (perf or {}).get("period_labels", {})
+        payload["l2_calls"] = ingest.l2_calls_by_name(perf)
         payload["perf_meta"] = None if perf is None else {
             "uploaded_at": _state["perf_uploaded_at"], "as_of": perf.get("as_of"), "stats": perf.get("stats", {})}
         payload["app_periods"] = ingest.APP_PERIODS
