@@ -247,6 +247,55 @@
   @media (max-width: 900px){
     .tree-header, .tree-row{ grid-template-columns: minmax(150px,1.4fr) 45px repeat(7, 70px); font-size:11px; }
   }
+
+  /* ---- Data uploads (HC / Sales / App install) ---- */
+  .upload-panel{
+    display:grid; grid-template-columns:auto minmax(0,1fr) auto auto; gap:6px 10px; align-items:center;
+    background:var(--panel); border:1px solid var(--hairline); border-radius:8px; padding:8px 12px; font-size:11.5px;
+    max-width:720px;
+  }
+  .upload-panel .upl-name{ font-weight:700; color:var(--navy); white-space:nowrap; }
+  .upload-panel .upl-status{ color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .upload-panel .upl-status.warn{ color:var(--rust); }
+  .upload-panel button{ padding:4px 10px; white-space:nowrap; }
+  @media (max-width: 700px){
+    .upload-panel{ grid-template-columns:auto minmax(0,1fr) auto; }
+    .upload-panel .upl-status{ grid-column:1 / -1; order:0; white-space:normal; }
+  }
+
+  /* ---- View switch ---- */
+  .view-switch{ display:inline-flex; border:1px solid var(--navy); border-radius:9px; overflow:hidden; margin-bottom:14px; }
+  .view-switch button{
+    border:none; border-radius:0; padding:8px 18px; font-size:13px; background:var(--panel); color:var(--navy);
+  }
+  .view-switch button + button{ border-left:1px solid var(--navy); }
+  .view-switch button.active{ background:var(--navy); color:#fff; }
+
+  /* ---- App Install view ---- */
+  .tree-panel.app-mode .tree-header, .tree-panel.app-mode .tree-row{
+    grid-template-columns: minmax(220px,2fr) 60px repeat(6, 100px);
+  }
+  .app-emp .emp-header, .app-emp .emp-row{
+    grid-template-columns: 1.6fr 60px repeat(6, 90px);
+  }
+  .num.good, .emp-num.good{ color:var(--teal); font-weight:700; }
+  .num.bad, .emp-num.bad{ color:var(--rust); font-weight:700; }
+  .hbar-list{ display:flex; flex-direction:column; gap:7px; max-height:196px; overflow-y:auto; padding-right:4px; }
+  .hbar-row{ display:grid; grid-template-columns:minmax(0,1.3fr) minmax(0,2fr) 52px; gap:8px; align-items:center; font-size:11.5px; }
+  .hbar-row .hb-name{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .hbar-track{ position:relative; height:12px; background:var(--navy-soft); border-radius:3px; }
+  .hbar-fill{ position:absolute; left:0; top:0; bottom:0; background:var(--navy); border-radius:3px; }
+  .hbar-fill.bad{ background:var(--rust); }
+  .hbar-avg{ position:absolute; top:-3px; bottom:-3px; width:2px; background:var(--text); }
+  .hbar-row .hb-val{ font-family:Consolas,monospace; text-align:right; font-variant-numeric:tabular-nums; }
+  .app-note{ font-size:11.5px; color:var(--muted); margin:10px 2px 0; line-height:1.5; }
+  .app-empty{ background:var(--panel); border:1px solid var(--hairline); border-radius:var(--radius); padding:40px; text-align:center; color:var(--muted); }
+  .modal table.app-hist{ width:100%; border-collapse:collapse; font-size:12.5px; }
+  .modal table.app-hist th, .modal table.app-hist td{ padding:6px 8px; border-bottom:1px solid #EEF0F2; text-align:right; }
+  .modal table.app-hist th{ font-size:10.5px; text-transform:uppercase; color:var(--muted); letter-spacing:0.04em; }
+  .modal table.app-hist th:first-child, .modal table.app-hist td:first-child{ text-align:left; }
+  .modal table.app-hist td{ font-family:Consolas,monospace; font-variant-numeric:tabular-nums; }
+  .modal table.app-hist td:first-child{ font-family:inherit; }
 </style>
 </head>
 <body>
@@ -262,13 +311,29 @@
         <span id="updated-text">connecting…</span>
         <button id="refresh">Refresh data</button>
       </div>
-      <div class="hierarchy-box">
-        <span id="hierarchy-status">hierarchy: —</span>
+      <div class="upload-panel">
+        <span class="upl-name">HC sheet</span>
+        <span class="upl-status" id="hierarchy-status">—</span>
         <input type="file" id="hierarchy-file" accept=".xlsx" />
-        <button id="hierarchy-upload">Upload weekly sheet</button>
+        <button id="hierarchy-upload">Upload</button>
+
+        <span class="upl-name">Sales dump</span>
+        <span class="upl-status" id="sales-status">—</span>
+        <input type="file" id="sales-file" accept=".xlsx,.csv" />
+        <button id="sales-upload">Upload</button>
+
+        <span class="upl-name">App install</span>
+        <span class="upl-status" id="app-status">—</span>
+        <input type="file" id="app-file" accept=".xlsx,.csv" />
+        <button id="app-upload">Upload</button>
       </div>
     </div>
   </header>
+
+  <div class="view-switch" id="view-switch">
+    <button type="button" data-view="perf" class="active">Performance</button>
+    <button type="button" data-view="app">App Install</button>
+  </div>
 
   <div class="filter-row">
     <div class="tabs" id="period-tabs"></div>
@@ -290,6 +355,7 @@
           <div class="multiselect-options" id="location-options"></div>
         </div>
       </div>
+      <span id="turnover-wrap" style="display:contents">
       <label for="turnover-select">Turnover</label>
       <select id="turnover-select">
         <option value="all">All Turnover</option>
@@ -297,6 +363,7 @@
         <option value="over">&ge;1.5Cr</option>
         <option value="no_gst">No GST</option>
       </select>
+      </span>
     </div>
   </div>
 
@@ -341,7 +408,14 @@ const EMPLOYEE_PERIOD_FIELDS = {
   m3: { sales_count:'sales_done_m3', sales_value:'annual_sale_done_m3', hot_total:null, hot_self:null, hot_mgr:null, total_attempts:null, unique_answered:null, talktime:null, total_meet:'total_meet_m3', fresh_meet:'fresh_meet_m3', followup_meet:'followup_meet_m3', self_meet:'self_meet_m3', with_mgr_meet:'with_mgr_meet_m3', hl_assigned:'top3_hl_m3', hl_done:'hl_meeting_done_m3' },
   m4: { sales_count:'sales_done_m4', sales_value:'annual_sale_done_m4', hot_total:null, hot_self:null, hot_mgr:null, total_attempts:null, unique_answered:null, talktime:null, total_meet:'total_meet_m4', fresh_meet:'fresh_meet_m4', followup_meet:'followup_meet_m4', self_meet:'self_meet_m4', with_mgr_meet:'with_mgr_meet_m4', hl_assigned:'top3_hl_m4', hl_done:'hl_meeting_done_m4' },
 };
-let currentPeriod = 'wtd';
+let currentPeriod = 'wtd';          // Performance view period
+let currentView = 'perf';           // 'perf' | 'app'
+// App Install periods, oldest week first so the tabs read left-to-right in time.
+const APP_PERIOD_ORDER = ['aw3', 'aw2', 'aw1', 'al3w', 'amtd'];
+const APP_WEEKS = ['aw3', 'aw2', 'aw1'];
+const APP_KEYS = ['app_met', 'app_before', 'app_after', 'app_none'];
+let currentAppPeriod = 'aw1';       // latest full week
+try{ const v = localStorage.getItem('dash_view'); if(v === 'app' || v === 'perf') currentView = v; }catch(e){}
 let currentVertical = 'all';
 let dashboardData = null;
 let expanded = { zm: new Set(), rm: new Set(), loc: new Set() };
@@ -388,16 +462,55 @@ function fmtCurrency(v){
 }
 function hasHotFields(period){ return ['overall','wtd','mtd','m1'].includes(period); }
 
+function appPeriodLabel(p){
+  const labels = (dashboardData && dashboardData.app_period_labels) || {};
+  const fallback = { aw1:'Last week', aw2:'Week −2', aw3:'Week −3', al3w:'Last 3 weeks', amtd:'MTD' };
+  const l = labels[p] || fallback[p] || p;
+  return APP_WEEKS.includes(p) ? 'Wk ' + l : l;
+}
+
+function perfPeriods(){
+  // Only offer periods the pushed query actually contains (data-driven).
+  const avail = dashboardData && dashboardData.available_periods;
+  const keys = Object.keys(PERIOD_LABELS);
+  return (avail && avail.length) ? keys.filter(k => avail.includes(k)) : keys;
+}
+
 function buildTabs(){
   tabsEl.innerHTML = '';
-  Object.entries(PERIOD_LABELS).forEach(([key,label]) => {
+  let entries;
+  if(currentView === 'app'){
+    entries = APP_PERIOD_ORDER.map(p => [p, appPeriodLabel(p)]);
+  } else {
+    const keys = perfPeriods();
+    if(!keys.includes(currentPeriod)) currentPeriod = keys[0];
+    entries = keys.map(k => [k, k === 'mtd' ? PERIOD_LABELS.mtd + ' (MTD)' : PERIOD_LABELS[k]]);
+  }
+  const active = currentView === 'app' ? currentAppPeriod : currentPeriod;
+  entries.forEach(([key,label]) => {
     const tab = document.createElement('div');
-    tab.className = 'tab' + (key === currentPeriod ? ' active' : '');
+    tab.className = 'tab' + (key === active ? ' active' : '');
     tab.textContent = label;
-    tab.addEventListener('click', () => { currentPeriod = key; renderAll(); });
+    tab.addEventListener('click', () => {
+      if(currentView === 'app') currentAppPeriod = key; else currentPeriod = key;
+      renderAll();
+    });
     tabsEl.appendChild(tab);
   });
 }
+
+function setView(v){
+  currentView = v;
+  try{ localStorage.setItem('dash_view', v); }catch(e){}
+  document.querySelectorAll('#view-switch button').forEach(b => b.classList.toggle('active', b.dataset.view === v));
+  document.getElementById('turnover-wrap').style.display = v === 'app' ? 'none' : 'contents';
+  if(dashboardData) renderAll();
+}
+
+// Dispatchers: everything that used to call renderTree()/renderFunnel()
+// now renders whichever view is active.
+function renderTree(){ if(currentView === 'app') renderAppTree(); else renderPerfTree(); }
+function renderFunnel(){ if(currentView === 'app') renderAppPanel(); else renderPerfFunnel(); }
 
 function renderAll(){
   buildTabs();
@@ -529,6 +642,16 @@ function sumChildMetrics(children){
   const metrics = {};
   let headcount = 0;
   Object.values(children).forEach(child => { headcount += child.headcount; });
+  // App-install periods: four plain counters, summed.
+  for(const period of APP_PERIOD_ORDER){
+    const agg = { app_met:0, app_before:0, app_after:0, app_none:0 };
+    Object.values(children).forEach(child => {
+      const m = child.metrics[period];
+      if(!m) return;
+      APP_KEYS.forEach(k => { agg[k] += m[k] || 0; });
+    });
+    metrics[period] = agg;
+  }
   for(const period of allPeriods){
     const agg = { sales_count:0, sales_value:0, total_meet:0, followup_meet:0, with_mgr_meet_general:0 };
     let hasHot = false;
@@ -700,7 +823,7 @@ function fmtRatio(numerator, denominator, decimals){
   return (n / d).toFixed(decimals === undefined ? 1 : decimals);
 }
 
-function renderFunnel(){
+function renderPerfFunnel(){
   const panel = document.getElementById('funnel-panel');
 
   if(!FUNNEL_PERIODS.includes(currentPeriod)){
@@ -953,7 +1076,7 @@ function matches(name){
   return String(name||'').toLowerCase().includes(searchTerm.toLowerCase());
 }
 
-function renderTree(){
+function renderPerfTree(){
   const tree = getFilteredTree();
   const showHot = hasHotFields(currentPeriod);
   const searching = searchTerm.length > 0;
@@ -1136,6 +1259,275 @@ function renderTree(){
   });
 }
 
+// ---------------------------------------------------------------------
+// App Install view
+// Unit = GLID, counted once per period (per vertical), credited to the
+// L1 who did the FIRST meeting with it in that period.
+//   Had app       : first install before that meeting
+//   Installed after: no app at the meeting, installed on/after it (the drive)
+//   Not installed : still no app -- the open opportunity
+//   Drive %       : installed after / (installed after + not installed)
+//   Coverage %    : (had app + installed after) / GLIDs met
+// ---------------------------------------------------------------------
+const MIN_BASE_NODE = 20;   // ZM/RM/Location: min GLIDs without app before a Drive % is judged
+const MIN_BASE_EMP = 5;     // employee level
+
+function pctNum(n, d){ return d ? n / d * 100 : null; }
+function fmtP(v){ return v === null || v === undefined ? '—' : v.toFixed(1) + '%'; }
+function driveBase(m){ m = m || {}; return (m.app_after || 0) + (m.app_none || 0); }
+function driveOf(m){ m = m || {}; return pctNum(m.app_after || 0, driveBase(m)); }
+function coverageOf(m){ m = m || {}; return pctNum((m.app_before || 0) + (m.app_after || 0), m.app_met || 0); }
+function appTotals(nodes, period){
+  const t = { app_met:0, app_before:0, app_after:0, app_none:0 };
+  Object.values(nodes).forEach(n => {
+    const m = n.metrics && n.metrics[period];
+    if(!m) return;
+    APP_KEYS.forEach(k => { t[k] += m[k] || 0; });
+  });
+  return t;
+}
+
+function renderBarStages(stages){
+  const maxVal = Math.max(1e-9, ...stages.map(s => s.value || 0));
+  const bars = stages.map(s => `
+    <div class="bar-col">
+      <div class="bar-value">${s.display !== undefined ? s.display : fmtNum(s.value)}</div>
+      <div class="bar-pct">${s.pct ?? ''}</div>
+      <div class="bar-shape" style="height:${Math.max(2, ((s.value || 0) / maxVal * 100))}%${s.color ? ';background:' + s.color : ''}"></div>
+    </div>`).join('');
+  const labels = stages.map(s => `<div class="bar-label">${escHtml(s.label)}</div>`).join('');
+  return `<div class="bar-chart">${bars}</div><div class="bar-labels">${labels}</div>`;
+}
+
+// One level below whatever the filters currently scope to: ZMs -> RMs -> Locations.
+function appBreakdownNodes(tree){
+  const out = [];
+  let level = 'ZM';
+  if(currentRmFilter !== 'all' || currentLocationFilter.length){
+    level = 'Location';
+    Object.values(tree).forEach(z => Object.values(z.rm_children).forEach(r =>
+      Object.entries(r.location_children).forEach(([n, node]) => out.push([n, node]))));
+  } else if(currentZmFilter !== 'all'){
+    level = 'RM';
+    Object.values(tree).forEach(z => Object.entries(z.rm_children).forEach(([n, node]) => out.push([n, node])));
+  } else {
+    Object.entries(tree).forEach(([n, node]) => out.push([n, node]));
+  }
+  return { level, nodes: out };
+}
+
+function renderAppPanel(){
+  const panel = document.getElementById('funnel-panel');
+  if(!dashboardData.app_meta){
+    panel.innerHTML = `<div class="app-empty">No app-install data yet. Upload the meeting-level app-install dump in the <b>App install</b> row at the top right.</div>`;
+    return;
+  }
+  const tree = getFilteredTree();
+  const p = currentAppPeriod;
+  const t = appTotals(tree, p);
+  const without = driveBase(t);
+  const drive = driveOf(t);
+  const periodLabel = escHtml(appPeriodLabel(p));
+
+  const funnel = [
+    { label:'GLIDs Met', value:t.app_met, pct:null },
+    { label:'No App at Meeting', value:without, pct:fmtPctSimple(without, t.app_met) },
+    { label:'Installed After Meeting', value:t.app_after, pct:fmtPctSimple(t.app_after, without), color:'var(--teal)' },
+  ];
+
+  const weeks = APP_WEEKS.map(w => {
+    const wt = appTotals(tree, w);
+    const d = driveOf(wt);
+    return { label:appPeriodLabel(w).replace('Wk ', ''), value:d || 0,
+             display:fmtP(d), pct:`${fmtNum(wt.app_after)} of ${fmtNum(driveBase(wt))}`,
+             color: w === p ? 'var(--navy)' : 'var(--slate)' };
+  });
+
+  const { level, nodes } = appBreakdownNodes(tree);
+  const ranked = nodes
+    .map(([name, node]) => { const m = node.metrics[p] || {}; return { name, drive:driveOf(m), base:driveBase(m), met:m.app_met || 0 }; })
+    .filter(r => r.base >= MIN_BASE_NODE)
+    .sort((a, b) => b.drive - a.drive);
+  const skipped = nodes.length - ranked.length;
+  const scaleMax = Math.max(1, ...ranked.map(r => r.drive), drive || 0) * 1.08;
+  const hbars = ranked.length ? ranked.map(r => `
+    <div class="hbar-row" title="${escAttr(r.name)}: ${fmtNum(r.met)} GLIDs met, ${fmtNum(r.base)} without app">
+      <div class="hb-name">${escHtml(r.name)}</div>
+      <div class="hbar-track">
+        <div class="hbar-fill ${drive !== null && r.drive < drive ? 'bad' : ''}" style="width:${(r.drive / scaleMax * 100).toFixed(1)}%"></div>
+        ${drive !== null ? `<div class="hbar-avg" style="left:${(drive / scaleMax * 100).toFixed(1)}%"></div>` : ''}
+      </div>
+      <div class="hb-val">${fmtP(r.drive)}</div>
+    </div>`).join('') : `<div class="multiselect-empty">Not enough GLIDs in this selection.</div>`;
+
+  const cards = [
+    { label:'GLIDs Met', value:fmtNum(t.app_met) },
+    { label:'Already Had App', value:`${fmtNum(t.app_before)} <span class="headcount-pill">${fmtPctSimple(t.app_before, t.app_met)}</span>` },
+    { label:'Installed After Meeting', value:fmtNum(t.app_after) },
+    { label:'Still Not Installed', value:fmtNum(t.app_none) },
+    { label:'Drive %', value:fmtP(drive) },
+    { label:'App Coverage %', value:fmtP(coverageOf(t)) },
+  ];
+
+  const outside = (dashboardData.extras_report && dashboardData.extras_report.app && dashboardData.extras_report.app.unplaced_units) || {};
+  const outsideNote = outside[p] ? ` ${fmtNum(outside[p])} GLIDs met by partner-office staff sit under “(Partner / outside hierarchy)”.` : '';
+
+  panel.innerHTML = `
+    <div class="funnel-grid">
+      <div class="funnel-col">
+        <div class="funnel-header"><h2>App Install Funnel</h2><span class="sub">${periodLabel}</span></div>
+        ${renderBarStages(funnel)}
+      </div>
+      <div class="funnel-col">
+        <div class="funnel-header"><h2>Drive % — Weekly Trend</h2><span class="sub">Installed after ÷ GLIDs without app, last 3 full weeks</span></div>
+        ${renderBarStages(weeks)}
+      </div>
+      <div class="funnel-col">
+        <div class="funnel-header"><h2>Drive % by ${level}</h2><span class="sub">${periodLabel} · line = overall ${fmtP(drive)} · rust = below overall</span></div>
+        <div class="hbar-list">${hbars}</div>
+        ${skipped > 0 ? `<div class="app-note" style="margin-top:6px">${skipped} ${level.toLowerCase()}(s) with fewer than ${MIN_BASE_NODE} GLIDs without the app not ranked.</div>` : ''}
+      </div>
+    </div>
+    <div class="funnel-cards">
+      ${cards.map(c => `<div class="funnel-card"><div class="label">${escHtml(c.label)}</div><div class="value">${c.value}</div></div>`).join('')}
+    </div>
+    <p class="app-note">Each GLID is counted once per period (per vertical), credited to the L1 who did the first meeting with it in that period.
+      <b>Drive %</b> = installed after the meeting ÷ GLIDs that didn't have the app at the meeting. <b>Coverage %</b> = GLIDs that now have the app ÷ GLIDs met.${outsideNote}</p>`;
+}
+
+function appCellsHtml(m, avgDrive, minBase, cellClass){
+  m = m || {};
+  const d = driveOf(m);
+  const flag = d !== null && avgDrive !== null && driveBase(m) >= minBase && d < avgDrive;
+  const c = cellClass;
+  return `
+    <div class="${c}">${fmtNum(m.app_met || 0)}</div>
+    <div class="${c}">${fmtNum(m.app_before || 0)}</div>
+    <div class="${c}">${fmtNum(m.app_after || 0)}</div>
+    <div class="${c}">${fmtNum(m.app_none || 0)}</div>
+    <div class="${c} ${flag ? 'bad' : ''}">${fmtP(d)}</div>
+    <div class="${c}">${fmtP(coverageOf(m))}</div>`;
+}
+
+function renderAppTree(){
+  if(!dashboardData.app_meta){ contentEl.innerHTML = ''; return; }
+  const tree = getFilteredTree();
+  const p = currentAppPeriod;
+  const avg = driveOf(appTotals(tree, p));
+
+  let html = `<div class="tree-panel app-mode">
+    <div class="tree-header">
+      <div>Name</div><div class="num">HC</div>
+      <div class="num">GLIDs Met</div><div class="num">Had App</div><div class="num">Installed After</div>
+      <div class="num">Not Installed</div><div class="num">Drive %</div><div class="num">Coverage %</div>
+    </div>`;
+
+  const byHc = (obj) => Object.keys(obj).sort((a, b) => (obj[b].headcount - obj[a].headcount) || a.localeCompare(b));
+  for(const zm of byHc(tree)){
+    const zmNode = tree[zm];
+    const zmOpen = expanded.zm.has(zm);
+    html += `<div class="tree-row depth-0" data-toggle="zm" data-key="${escAttr(zm)}">
+      <div class="name-cell"><span class="caret">${zmOpen ? '▼' : '▶'}</span>${escHtml(zm)}</div>
+      <div class="num">${zmNode.headcount}</div>${appCellsHtml(zmNode.metrics[p], avg, MIN_BASE_NODE, 'num')}</div>`;
+    if(!zmOpen) continue;
+    for(const rm of byHc(zmNode.rm_children)){
+      const rmNode = zmNode.rm_children[rm];
+      const rmKey = zm + '||' + rm;
+      const rmOpen = expanded.rm.has(rmKey);
+      html += `<div class="tree-row depth-1" data-toggle="rm" data-key="${escAttr(rmKey)}">
+        <div class="name-cell"><span class="caret">${rmOpen ? '▼' : '▶'}</span>${escHtml(rm)}</div>
+        <div class="num">${rmNode.headcount}</div>${appCellsHtml(rmNode.metrics[p], avg, MIN_BASE_NODE, 'num')}</div>`;
+      if(!rmOpen) continue;
+      for(const loc of byHc(rmNode.location_children)){
+        const locNode = rmNode.location_children[loc];
+        const locKey = rmKey + '||' + loc;
+        const locOpen = expanded.loc.has(locKey);
+        html += `<div class="tree-row depth-2" data-toggle="loc" data-key="${escAttr(locKey)}">
+          <div class="name-cell"><span class="caret">${locOpen ? '▼' : '▶'}</span>${escHtml(loc)}</div>
+          <div class="num">${locNode.headcount}</div>${appCellsHtml(locNode.metrics[p], avg, MIN_BASE_NODE, 'num')}</div>`;
+        if(!locOpen) continue;
+        html += renderAppEmployees(locNode, p, avg);
+      }
+    }
+  }
+  html += `</div>`;
+  contentEl.innerHTML = html;
+
+  contentEl.querySelectorAll('[data-toggle]').forEach(el => {
+    el.addEventListener('click', () => {
+      const level = el.dataset.toggle, key = el.dataset.key;
+      if(expanded[level].has(key)) expanded[level].delete(key); else expanded[level].add(key);
+      renderAppTree();
+    });
+  });
+  contentEl.querySelectorAll('[data-employee]').forEach(el => {
+    el.addEventListener('click', () => openEmployeeModal(el.dataset.employee));
+  });
+}
+
+function renderAppEmployees(locNode, p, avg){
+  let html = `<div class="emp-table app-emp">
+    <div class="emp-header">
+      <div class="emp-name-head">Name</div><div class="emp-num">Tenure</div>
+      <div class="emp-num">GLIDs Met</div><div class="emp-num">Had App</div><div class="emp-num">Installed After</div>
+      <div class="emp-num">Not Installed</div><div class="emp-num">Drive %</div><div class="emp-num">Coverage %</div>
+    </div>`;
+  const byManager = new Map();
+  for(const emp of locNode.employees){
+    const mgr = emp.manager_name || '(No Manager)';
+    if(!byManager.has(mgr)) byManager.set(mgr, []);
+    byManager.get(mgr).push(emp);
+  }
+  const empSum = { app_met:0, app_before:0, app_after:0, app_none:0 };
+  for(const mgr of [...byManager.keys()].sort((a, b) => a.localeCompare(b))){
+    // Biggest open opportunity (not installed) first.
+    const team = [...byManager.get(mgr)].sort((a, b) =>
+      ((b.metrics[p] || {}).app_none || 0) - ((a.metrics[p] || {}).app_none || 0) || (a.name || '').localeCompare(b.name || ''));
+    const agg = { app_met:0, app_before:0, app_after:0, app_none:0 };
+    team.forEach(e => APP_KEYS.forEach(k => { const v = (e.metrics[p] || {})[k] || 0; agg[k] += v; empSum[k] += v; }));
+    html += `<div class="emp-row emp-manager-row">
+      <div class="emp-name">${escHtml(mgr)} <span class="headcount-pill">(${team.length})</span></div><div class="emp-num"></div>
+      ${appCellsHtml(agg, avg, MIN_BASE_EMP, 'emp-num')}</div>`;
+    for(const emp of team){
+      html += `<div class="emp-row" data-employee="${escAttr(emp.id)}">
+        <div class="emp-name">${escHtml(emp.name || emp.id)}</div><div class="emp-num">${fmtNum(emp.tenure)}</div>
+        ${appCellsHtml(emp.metrics[p], avg, MIN_BASE_EMP, 'emp-num')}</div>`;
+    }
+  }
+  // GLIDs met by people who aren't L1s in the main data (L2s, partner staff,
+  // L1s missing from the query) are added at location level -- show them so
+  // the employee rows visibly add up to the location row.
+  const lm = locNode.metrics[p] || {};
+  const other = {};
+  APP_KEYS.forEach(k => { other[k] = (lm[k] || 0) - empSum[k]; });
+  if(other.app_met > 0){
+    html += `<div class="emp-row emp-manager-row" title="GLIDs met by staff at this location who aren't in the L1 list (e.g. L2s, partner staff)">
+      <div class="emp-name">Others at this location (not in L1 list)</div><div class="emp-num"></div>
+      ${appCellsHtml(other, avg, MIN_BASE_EMP, 'emp-num')}</div>`;
+  }
+  return html + `</div>`;
+}
+
+function findEmployeeSummary(id){
+  for(const z of Object.values(dashboardData.tree))
+    for(const r of Object.values(z.rm_children))
+      for(const l of Object.values(r.location_children))
+        for(const e of l.employees) if(String(e.id) === String(id)) return e;
+  return null;
+}
+
+function buildAppHistoryHtml(summary){
+  if(!dashboardData.app_meta || !summary) return '';
+  const rows = APP_PERIOD_ORDER.map(p => {
+    const m = summary.metrics[p] || {};
+    return `<tr><td>${escHtml(appPeriodLabel(p))}</td><td>${fmtNum(m.app_met || 0)}</td><td>${fmtNum(m.app_before || 0)}</td>
+      <td>${fmtNum(m.app_after || 0)}</td><td>${fmtNum(m.app_none || 0)}</td><td>${fmtP(driveOf(m))}</td></tr>`;
+  }).join('');
+  return `<div class="modal-section-label">App Install</div>
+    <table class="app-hist"><thead><tr><th>Period</th><th>GLIDs Met</th><th>Had App</th><th>Installed After</th><th>Not Installed</th><th>Drive %</th></tr></thead>
+    <tbody>${rows}</tbody></table>`;
+}
+
 // (Search panel removed — search-box no longer exists in the DOM.)
 
 // ---------------------------------------------------------------------
@@ -1222,8 +1614,10 @@ async function openEmployeeModal(employeeId){
     root.querySelector('.modal').innerHTML = `
       <button class="modal-close" id="modal-close-btn">Close</button>
       <h3>${escHtml(name)}</h3>
-      <div class="sub">Employee ID: ${escHtml(employeeId)} — showing ${escHtml(PERIOD_LABELS[currentPeriod])} figures; switch the period tab behind this panel to see a different period next time you open it</div>
+      <div class="sub">Employee ID: ${escHtml(employeeId)} — performance shows ${escHtml(PERIOD_LABELS[currentPeriod])} figures (the period selected in the Performance view)</div>
+      ${currentView === 'app' ? buildAppHistoryHtml(findEmployeeSummary(employeeId)) : ''}
       ${buildEmployeeDetailHtml(emp, currentPeriod)}
+      ${currentView === 'app' ? '' : buildAppHistoryHtml(findEmployeeSummary(employeeId))}
     `;
     document.getElementById('modal-close-btn').addEventListener('click', () => { root.innerHTML=''; });
   } catch(e){
@@ -1253,11 +1647,14 @@ async function fetchDashboard(force){
     titleEl.textContent = payload.title || 'Dashboard';
     updatedTextEl.textContent = 'data as of ' + relativeTime(payload.redash_cached_at);
     hierarchyStatusEl.textContent = payload.hierarchy_row_count
-      ? `hierarchy: ${payload.hierarchy_row_count} L1s, updated ${relativeTime(payload.hierarchy_uploaded_at)}`
-      : 'hierarchy: not uploaded yet';
+      ? `${fmtNum(payload.hierarchy_row_count)} L1s · ${relativeTime(payload.hierarchy_uploaded_at)}`
+      : 'not uploaded yet';
     if(payload.unmapped_count > 0){
-      hierarchyStatusEl.textContent += ` (${payload.unmapped_count} unmapped)`;
+      hierarchyStatusEl.textContent += ` · ${payload.unmapped_count} L1s not in sheet`;
     }
+    hierarchyStatusEl.classList.toggle('warn', !payload.hierarchy_row_count || payload.unmapped_count > 0);
+    hierarchyStatusEl.title = hierarchyStatusEl.textContent;
+    updateDumpStatuses(payload);
     if(payload.ambiguous_locations && payload.ambiguous_locations.length > 0){
       hierarchyStatusEl.textContent += ` — ⚠ ${payload.ambiguous_locations.length} location(s) appear under multiple RMs, assigned to whichever RM has the most people there: ${payload.ambiguous_locations.slice(0,5).join(', ')}${payload.ambiguous_locations.length > 5 ? '…' : ''}`;
     }
@@ -1366,9 +1763,129 @@ hierarchyUploadBtn.addEventListener('click', async () => {
     alert('Upload failed: connection error.');
   } finally {
     hierarchyUploadBtn.disabled = false;
-    hierarchyUploadBtn.textContent = 'Upload weekly sheet';
+    hierarchyUploadBtn.textContent = 'Upload';
   }
 });
+
+// ---------------------------------------------------------------------
+// Sales dump + App-install dump uploads
+// ---------------------------------------------------------------------
+const salesStatusEl = document.getElementById('sales-status');
+const appStatusEl = document.getElementById('app-status');
+let appJobPolling = false;
+
+function fmtShortDate(iso){
+  if(!iso) return '';
+  const d = new Date(iso + 'T00:00:00');
+  return d.toLocaleDateString('en-IN', { day:'numeric', month:'short' });
+}
+
+function updateDumpStatuses(payload){
+  const sm = payload.sales_meta;
+  if(sm){
+    const st = sm.stats || {};
+    // as_of is exclusive (periods run up to the day before the upload date)
+    const upto = new Date(sm.as_of + 'T00:00:00'); upto.setDate(upto.getDate() - 1);
+    let txt = `${fmtNum(st.sales_kept)} sales · up to ${upto.toLocaleDateString('en-IN', {day:'numeric', month:'short'})} · ${relativeTime(sm.uploaded_at)}`;
+    const out = payload.extras_report && payload.extras_report.sales && payload.extras_report.sales.unplaced_units;
+    if(out && out.mtd) txt += ` · ${out.mtd} at partner offices`;
+    salesStatusEl.textContent = txt;
+    salesStatusEl.title = `Rows read ${fmtNum(st.rows_read)} · kept ${fmtNum(st.sales_kept)} · dropped by receipt/sale status ${fmtNum(st.dropped_by_status)} · other verticals ${fmtNum(st.out_of_scope_vertical)} · duplicate receipts ${fmtNum(st.dropped_duplicate_receipt)}`;
+    salesStatusEl.classList.remove('warn');
+  } else {
+    salesStatusEl.textContent = 'not uploaded — sales show as 0';
+    salesStatusEl.title = '';
+    salesStatusEl.classList.add('warn');
+  }
+  if(appJobPolling) return;   // the poller owns the text while a file is processing
+  const am = payload.app_meta;
+  if(am){
+    const st = am.stats || {};
+    appStatusEl.textContent = `${fmtNum(st.meetings_read)} meetings · ${relativeTime(am.uploaded_at)}`;
+    appStatusEl.title = appStatusEl.textContent;
+    appStatusEl.classList.remove('warn');
+  } else {
+    appStatusEl.textContent = 'not uploaded yet';
+    appStatusEl.classList.add('warn');
+  }
+}
+
+async function postFile(url, file){
+  const formData = new FormData();
+  formData.append('file', file);
+  const res = await fetch(url, { method:'POST', body: formData });
+  return res.json();
+}
+
+const salesUploadBtn = document.getElementById('sales-upload');
+const salesFileInput = document.getElementById('sales-file');
+salesUploadBtn.addEventListener('click', async () => {
+  const file = salesFileInput.files[0];
+  if(!file){ alert('Choose the sales dump (.xlsx) first.'); return; }
+  salesUploadBtn.disabled = true; salesUploadBtn.textContent = 'Uploading…';
+  try{
+    const payload = await postFile('/api/upload-sales', file);
+    if(!payload.ok){ alert('Upload failed: ' + payload.error); }
+    else { salesFileInput.value = ''; await fetchDashboard(false); }
+  } catch(e){
+    alert('Upload failed: connection error.');
+  } finally {
+    salesUploadBtn.disabled = false; salesUploadBtn.textContent = 'Upload';
+  }
+});
+
+const appUploadBtn = document.getElementById('app-upload');
+const appFileInput = document.getElementById('app-file');
+async function pollAppJob(){
+  appJobPolling = true;
+  appUploadBtn.disabled = true;
+  const started = Date.now();
+  try{
+    while(true){
+      const s = await (await fetch('/api/upload-appinstall-status')).json();
+      if(s.state === 'processing'){
+        appStatusEl.textContent = `processing… ${Math.round((Date.now() - started) / 1000)}s`;
+        appStatusEl.classList.remove('warn');
+        await new Promise(r => setTimeout(r, 2000));
+        continue;
+      }
+      if(s.state === 'error') alert(s.error || 'App-install upload failed.');
+      break;
+    }
+  } catch(e){
+    alert('Lost connection while the app-install file was processing — press Refresh data in a minute.');
+  } finally {
+    appJobPolling = false;
+    appUploadBtn.disabled = false; appUploadBtn.textContent = 'Upload';
+    await fetchDashboard(false);
+  }
+}
+appUploadBtn.addEventListener('click', async () => {
+  const file = appFileInput.files[0];
+  if(!file){ alert('Choose the app-install dump (.xlsx) first.'); return; }
+  appUploadBtn.disabled = true; appUploadBtn.textContent = 'Uploading…';
+  appStatusEl.textContent = 'uploading…';
+  try{
+    const payload = await postFile('/api/upload-appinstall', file);
+    if(!payload.ok){
+      alert('Upload failed: ' + payload.error);
+      appUploadBtn.disabled = false; appUploadBtn.textContent = 'Upload';
+      return;
+    }
+    appFileInput.value = '';
+    await pollAppJob();
+  } catch(e){
+    alert('Upload failed: connection error.');
+    appUploadBtn.disabled = false; appUploadBtn.textContent = 'Upload';
+  }
+});
+
+document.querySelectorAll('#view-switch button').forEach(b =>
+  b.addEventListener('click', () => setView(b.dataset.view)));
+setView(currentView);
+
+// If a file was already processing when the page opened, keep watching it.
+fetch('/api/upload-appinstall-status').then(r => r.json()).then(s => { if(s.state === 'processing') pollAppJob(); }).catch(() => {});
 
 fetchDashboard(false);
 setInterval(() => fetchDashboard(false), 5 * 60 * 1000);
