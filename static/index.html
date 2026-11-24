@@ -738,6 +738,7 @@ function sumChildMetrics(children){
       }
       agg.total_meet += m.total_meet || 0;
       agg.followup_meet += m.followup_meet || 0;
+      if('zero_tp_meet' in m) agg.zero_tp_meet = (agg.zero_tp_meet || 0) + (m.zero_tp_meet || 0);
       agg.with_mgr_meet_general += m.with_mgr_meet_general || 0;
       if('total_meet_under' in m){
         agg.total_meet_under = (agg.total_meet_under||0) + (m.total_meet_under||0);
@@ -1127,6 +1128,59 @@ function renderPerfFunnel(){
 
     <div class="funnel-cards">
       ${cards.map(c => `<div class="funnel-card"><div class="label">${escHtml(c.label)}</div><div class="value">${c.value}</div></div>`).join('')}
+    </div>
+    ${renderZeroTpPanel(tree)}`;
+}
+
+// ---------------------------------------------------------------------
+// 0 TP % = meetings where the L1 earned 0 approved TP / all meetings.
+// Lower is better. Not split by turnover (TP isn't), so it always shows
+// all-turnover numbers.
+// ---------------------------------------------------------------------
+const MIN_MEET_ZERO_TP = 50;   // min meetings before a ZM/RM/Location is ranked
+function zeroTpOf(m){ m = m || {}; return pctNum(m.zero_tp_meet || 0, m.total_meet || 0); }
+function sumOver(nodes, period, keys){
+  const t = {}; keys.forEach(k => t[k] = 0);
+  Object.values(nodes).forEach(n => { const m = n.metrics && n.metrics[period]; if(m) keys.forEach(k => { t[k] += m[k] || 0; }); });
+  return t;
+}
+function renderZeroTpPanel(tree){
+  const stats = (dashboardData.perf_meta && dashboardData.perf_meta.stats) || {};
+  if(!stats.has_zero_tp) return '';
+  const p = currentPeriod;
+  const overall = zeroTpOf(sumOver(tree, p, ['zero_tp_meet', 'total_meet']));
+  const weeks = ['w3', 'w2', 'w1'].map(w => {
+    const t = sumOver(tree, w, ['zero_tp_meet', 'total_meet']);
+    const v = zeroTpOf(t);
+    return { label: periodLabel(w).replace('Wk ', ''), value: v || 0, display: fmtP(v),
+             pct: `${fmtNum(t.zero_tp_meet)} of ${fmtNum(t.total_meet)}`,
+             color: w === p ? 'var(--rust)' : '#D9906A' };
+  });
+  const { level, nodes } = appBreakdownNodes(tree);
+  const ranked = nodes.map(([name, node]) => { const m = node.metrics[p] || {}; return { name, v: zeroTpOf(m), meet: m.total_meet || 0, zero: m.zero_tp_meet || 0 }; })
+    .filter(r => r.meet >= MIN_MEET_ZERO_TP).sort((a, b) => b.v - a.v);
+  const skipped = nodes.length - ranked.length;
+  const scaleMax = Math.max(1, ...ranked.map(r => r.v), overall || 0) * 1.08;
+  const hbars = ranked.length ? ranked.map(r => `
+    <div class="hbar-row" title="${escAttr(r.name)}: ${fmtNum(r.zero)} of ${fmtNum(r.meet)} meetings had 0 TP">
+      <div class="hb-name">${escHtml(r.name)}</div>
+      <div class="hbar-track">
+        <div class="hbar-fill ${overall !== null && r.v > overall ? 'bad' : ''}" style="width:${(r.v / scaleMax * 100).toFixed(1)}%"></div>
+        ${overall !== null ? `<div class="hbar-avg" style="left:${(overall / scaleMax * 100).toFixed(1)}%"></div>` : ''}
+      </div>
+      <div class="hb-val">${fmtP(r.v)}</div>
+    </div>`).join('') : `<div class="multiselect-empty">Not enough meetings in this selection.</div>`;
+  return `
+    <div class="lead-grid">
+      <div class="funnel-col">
+        <div class="funnel-header"><h2>0 TP % — Weekly Trend</h2><span class="sub">Meetings with 0 approved TP ÷ all meetings, last 3 full weeks · lower is better</span></div>
+        ${renderBarStages(weeks)}
+      </div>
+      <div class="funnel-col">
+        <div class="funnel-header"><h2>0 TP % by ${level}</h2><span class="sub">${escHtml(periodLabel(p))} · line = overall ${fmtP(overall)} · rust = worse than overall · all turnover</span></div>
+        <div class="hbar-list">${hbars}</div>
+        ${skipped > 0 ? `<div class="app-note" style="margin-top:6px">${skipped} ${level.toLowerCase()}(s) with fewer than ${MIN_MEET_ZERO_TP} meetings not ranked.</div>` : ''}
+      </div>
     </div>`;
 }
 
