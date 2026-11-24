@@ -476,7 +476,7 @@ def available_periods(rows, candidates):
 # has a valid sale in the uploaded sales dump on/after the lead's anchor date
 # (same rule the old query used against ar_receipts).
 # ---------------------------------------------------------------------------
-PERF_PERIODS = ["w1", "w2", "w3", "l3w", "mtd"]
+PERF_PERIODS = ["wtd", "w1", "w2", "w3", "l3w", "mtd"]
 PERF_EMP_KEYS = ["total_meet", "fresh_meet", "followup_meet", "self_meet", "with_mgr_meet",
                  "working_days", "total_meet_under", "followup_meet_under", "with_mgr_meet_under",
                  "total_meet_over", "followup_meet_over", "with_mgr_meet_over",
