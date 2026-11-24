@@ -399,6 +399,7 @@ def _run_appinstall_job(file_bytes):
     the page polls /api/upload-appinstall-status."""
     try:
         parsed = ingest.parse_appinstall_dump(file_bytes)
+        parsed["source"] = "upload"
         with _lock:
             _state["appinstall"] = parsed
             _state["appinstall_uploaded_at"] = time.time()
@@ -439,6 +440,7 @@ def push_appinstall():
             or not isinstance(parsed.get("period_labels"), dict):
         return jsonify({"ok": False, "error": "Expected JSON body like {\"parsed\": {\"by_owner\": {...}, \"period_labels\": {...}}}"}), 400
     parsed.setdefault("stats", {})
+    parsed["source"] = "redash"
     with _lock:
         _state["appinstall"] = parsed
         _state["appinstall_uploaded_at"] = time.time()
@@ -596,6 +598,7 @@ def api_dashboard_data():
         }
         payload["app_meta"] = None if _state["appinstall"] is None else {
             "uploaded_at": _state["appinstall_uploaded_at"], "stats": _state["appinstall"]["stats"],
+            "source": _state["appinstall"].get("source", "upload"),
         }
         payload["extras_report"] = computed.get("extras_report", {})
         payload["available_verticals"] = get_available_verticals(_state["redash_rows"])
