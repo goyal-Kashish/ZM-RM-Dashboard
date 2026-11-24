@@ -205,6 +205,11 @@ def main():
     if not rows:
         print("WARNING: Redash returned 0 rows for the main query. Not pushing -- check your query.")
         sys.exit(1)
+    if "fk_employeeid" not in rows[0]:
+        print(f"ERROR: query {query_id} doesn't look like the main L1 query (no fk_employeeid column; "
+              f"got {sorted(rows[0].keys())[:6]}...). Not pushing. Check REDASH_QUERY_ID and that "
+              f"query {query_id} still has the main L1 SQL.")
+        sys.exit(1)
     result = push_to_dashboard(dashboard_url, push_token, "/api/push-data", {"rows": rows})
     if result.get("ok"):
         dropped = result.get("duplicates_dropped") or 0
