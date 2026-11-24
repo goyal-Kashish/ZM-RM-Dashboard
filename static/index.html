@@ -438,7 +438,7 @@ const EMPLOYEE_PERIOD_FIELDS = {
   f.sales_count = 'sales_done_' + p; f.sales_value = 'annual_sale_done_' + p;
   EMPLOYEE_PERIOD_FIELDS[p] = f;
 });
-let currentPeriod = 'w1';           // Performance view period (latest full week)
+let currentPeriod = 'wtd';          // Performance view period: WTD | Last 3 weeks | MTD
 let currentView = 'perf';           // 'perf' | 'app'
 // App Install periods, oldest week first so the tabs read left-to-right in time.
 const APP_PERIOD_ORDER = ['aw3', 'aw2', 'aw1', 'al3w', 'amtd'];
@@ -528,7 +528,7 @@ function buildTabs(){
     entries = APP_PERIOD_ORDER.map(p => [p, appPeriodLabel(p)]);
   } else {
     const keys = perfPeriods();
-    if(!keys.includes(currentPeriod)) currentPeriod = keys.includes('w1') ? 'w1' : keys.includes('mtd') ? 'mtd' : keys[0];
+    if(!keys.includes(currentPeriod)) currentPeriod = keys[0];
     entries = keys.map(k => [k, periodLabel(k)]);
   }
   const active = currentView === 'app' ? currentAppPeriod : currentPeriod;
