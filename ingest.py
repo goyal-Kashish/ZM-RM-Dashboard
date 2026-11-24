@@ -38,7 +38,7 @@ SALES_VERTICAL_IDS = {
 TURNOVER_UNDER = {"0 - 40 l", "40 l - 1.5 cr"}
 TURNOVER_OVER = {"1.5 - 5 cr", "5 - 25 cr", "25 - 100 cr", "100 - 500 cr", "> 500 cr"}
 
-SALES_PERIODS = ["wtd", "mtd", "m1"]
+SALES_PERIODS = ["wtd", "mtd", "w1", "w2", "w3", "l3w"]
 # Order of the counters stored per (claimer, period); mapped to the logical
 # metric names used everywhere in dashboard_logic.
 SALES_KEYS = ["sales_count", "sales_value", "sales_count_under", "sales_value_under",
@@ -117,10 +117,17 @@ def _sales_periods_for(d, as_of):
         out.append("mtd")
     if prev_month_start <= d < month_start:
         out.append("m1")
-    return out
+    # Last 3 full Mon-Sun weeks (w1 = most recent) and the three combined.
+    for i, key in enumerate(("w1", "w2", "w3")):
+        start = monday - datetime.timedelta(days=7 * (i + 1))
+        if start <= d < start + datetime.timedelta(days=7):
+            out.append(key)
+    if monday - datetime.timedelta(days=21) <= d < monday:
+        out.append("l3w")
+    return [p for p in out if p in SALES_PERIODS]
 
 
-SALES_COLUMNS = ["Receipt", "Entered On", "Receipt Status", "Sale Status", "Claimed By ID",
+SALES_COLUMNS = ["GL USER ID", "Receipt", "Entered On", "Receipt Status", "Sale Status", "Claimed By ID",
                  "Vertical", "mode", "turnover", "Claimed Location", "Regional Manager"]
 
 
@@ -135,6 +142,7 @@ def parse_sales_rows(row_iter, as_of=None):
     unknown_turnover = Counter()
     seen_receipts = set()
     by_claimer = {}
+    glid_last_sale = {}
 
     for r in row_iter:
         stats["rows_read"] += 1
@@ -148,6 +156,15 @@ def parse_sales_rows(row_iter, as_of=None):
             continue
         if receipt:
             seen_receipts.add(receipt)
+        # GLID -> latest valid sale date (any vertical), used to mark Hot
+        # Prospects / HLs as converted. Today's entries are left out, same
+        # as every other number.
+        glid = normalize_id(r.get("GL USER ID"))
+        sd = _to_date(r["Entered On"])
+        if glid and sd is not None and sd < as_of:
+            iso = sd.isoformat()
+            if iso > glid_last_sale.get(glid, ""):
+                glid_last_sale[glid] = iso
         vname = _norm_text(r["Vertical"])
         vid = SALES_VERTICAL_IDS.get(vname)
         if not vid:
@@ -197,6 +214,7 @@ def parse_sales_rows(row_iter, as_of=None):
     return {
         "as_of": as_of.isoformat(),
         "by_claimer": by_claimer,
+        "glid_last_sale": glid_last_sale,
         "stats": dict(stats),
         "out_of_scope_verticals": dict(out_of_scope),
         "unknown_turnover_values": dict(unknown_turnover),
@@ -444,3 +462,176 @@ def available_periods(rows, candidates):
     sample = rows[0]
     return [p for p in candidates
             if (METRIC_FIELDS[p].get("total_meet") or "") in sample]
+
+
+# ---------------------------------------------------------------------------
+# PERFORMANCE BY PERIOD (companion Redash query: last 3 weeks + MTD)
+#
+# The query returns two kinds of rows:
+#   row_kind = 'emp'  : one per L1 x period -- meetings, calls, HL counts
+#   row_kind = 'lead' : one per L1 x period x GLID that was a Hot Prospect
+#                       and/or Top-3 HL in that period, with its anchor date,
+#                       L2-met flag, TP>200 flag and turnover bucket.
+# Conversion is NOT in the query: a lead counts as converted when its GLID
+# has a valid sale in the uploaded sales dump on/after the lead's anchor date
+# (same rule the old query used against ar_receipts).
+# ---------------------------------------------------------------------------
+PERF_PERIODS = ["w1", "w2", "w3", "l3w", "mtd"]
+PERF_EMP_KEYS = ["total_meet", "fresh_meet", "followup_meet", "self_meet", "with_mgr_meet",
+                 "working_days", "total_meet_under", "followup_meet_under", "with_mgr_meet_under",
+                 "total_meet_over", "followup_meet_over", "with_mgr_meet_over",
+                 "total_attempts", "call_answered", "avg_tt_secs", "hl_assigned", "hl_meeting_done"]
+PERF_REQUIRED = ["row_kind", "employee_id", "period"] + PERF_EMP_KEYS + [
+    "glid", "turnover_bucket", "is_hp", "hp_anchor_date", "hp_with_mgr", "hp_tp_sum", "hp_tp_over_200",
+    "is_hl", "hl_anchor_date", "hl_with_mgr", "hl_tp_over_200"]
+_BUCKET = {"under_1.5cr": 1, "over_1.5cr": 2}
+
+
+def _num0(v):
+    try:
+        return float(v) if v is not None and v != "" else 0.0
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def week_labels(as_of):
+    monday = as_of - datetime.timedelta(days=as_of.weekday())
+    labels = {"l3w": "Last 3 weeks", "mtd": "MTD"}
+    for i, key in enumerate(("w1", "w2", "w3")):
+        w = monday - datetime.timedelta(days=7 * (i + 1))
+        end = w + datetime.timedelta(days=6)
+        labels[key] = (f"{w.day}–{end.day} {end.strftime('%b')}" if w.month == end.month
+                       else f"{w.day} {w.strftime('%b')}–{end.day} {end.strftime('%b')}")
+    return labels
+
+
+def parse_perf_rows(row_iter, as_of=None):
+    """Redash rows -> compact structure that is cheap to push and store."""
+    as_of = as_of or ist_today()
+    stats = Counter()
+    emp = {}
+    leads = []
+    for r in row_iter:
+        kind = _norm_text(r.get("row_kind"))
+        period = _norm_text(r.get("period"))
+        eid = normalize_id(r.get("employee_id"))
+        if period not in PERF_PERIODS or not eid:
+            stats["dropped_bad_row"] += 1
+            continue
+        if kind == "emp":
+            emp.setdefault(eid, {})[period] = [round(_num0(r.get(k)), 2) for k in PERF_EMP_KEYS]
+            stats["emp_rows"] += 1
+        elif kind == "lead":
+            glid = normalize_id(r.get("glid"))
+            if not glid:
+                stats["dropped_bad_row"] += 1
+                continue
+            hp_a = _to_date(r.get("hp_anchor_date"))
+            hl_a = _to_date(r.get("hl_anchor_date"))
+            is_hp = int(_num0(r.get("is_hp")) > 0)
+            is_hl = int(_num0(r.get("is_hl")) > 0)
+            leads.append([eid, period, glid, _BUCKET.get(_norm_text(r.get("turnover_bucket")), 0),
+                          is_hp, hp_a.isoformat() if (is_hp and hp_a) else "",
+                          int(_num0(r.get("hp_with_mgr")) > 0), round(_num0(r.get("hp_tp_sum")), 1),
+                          int(_num0(r.get("hp_tp_over_200")) > 0),
+                          is_hl, hl_a.isoformat() if (is_hl and hl_a) else "",
+                          int(_num0(r.get("hl_with_mgr")) > 0), int(_num0(r.get("hl_tp_over_200")) > 0)])
+            stats["lead_rows"] += 1
+        else:
+            stats["dropped_bad_row"] += 1
+    return {"as_of": as_of.isoformat(), "period_labels": week_labels(as_of),
+            "emp": emp, "leads": leads, "stats": dict(stats)}
+
+
+def _hhmmss(secs):
+    secs = int(secs or 0)          # floor, like the query's floor()
+    return f"{secs // 3600:02d}:{(secs % 3600) // 60:02d}:{secs % 60:02d}"
+
+
+def overlay_perf_on_rows(rows, perf, sales):
+    """Write each L1's last-3-weeks / MTD numbers into the row columns that
+    METRIC_FIELDS (and the employee pop-up) read, filling conversions from
+    the sales dump. Rows are modified in place (they are already copies)."""
+    if not perf:
+        return rows
+    last_sale = (sales or {}).get("glid_last_sale", {})
+    # (eid, period) -> counters
+    agg = defaultdict(Counter)
+    for (eid, period, glid, bucket, is_hp, hp_a, hp_wm, hp_tps, hp_tp200,
+         is_hl, hl_a, hl_wm, hl_tp200) in perf["leads"]:
+        a = agg[(eid, period)]
+        sold = last_sale.get(glid, "")
+        sfx = ("", "_under" if bucket == 1 else "_over" if bucket == 2 else None)
+        for suf in sfx:
+            if suf is None:
+                continue
+            if is_hp:
+                conv = 1 if (sold and hp_a and sold >= hp_a) else 0
+                a["hot_total" + suf] += 1
+                a["hot_mgr" + suf] += hp_wm
+                a["hp_converted" + suf] += conv
+                a["hp_converted_met" + suf] += conv * hp_wm
+                a["hp_tp_over_200" + suf] += hp_tp200
+                if suf == "":
+                    a["hp_tp_sum_met"] += hp_tps if hp_wm else 0
+            if is_hl:
+                conv = 1 if (sold and hl_a and sold >= hl_a) else 0
+                a["hl_assigned_unique" + suf] += 1
+                a["hl_l2_met" + suf] += hl_wm
+                a["hl_converted" + suf] += conv
+                a["hl_converted_met" + suf] += conv * hl_wm
+                a["hl_tp_over_200" + suf] += hl_tp200
+            # Combined pool: an HL takes precedence (its date / L2 check),
+            # same as the query's combined_lead_pool.
+            anchor, wm = (hl_a, hl_wm) if is_hl else (hp_a, hp_wm)
+            conv = 1 if (sold and anchor and sold >= anchor) else 0
+            a["combined_total" + suf] += 1
+            a["combined_l2_met" + suf] += wm
+            a["combined_converted" + suf] += conv
+            a["combined_converted_met" + suf] += conv * wm
+
+    emp = perf["emp"]
+    from dashboard_logic import METRIC_FIELDS  # local: avoids import cycle at load
+    for r in rows:
+        eid = normalize_id(r.get(EMPLOYEE_ID_FIELD))
+        for p in PERF_PERIODS:
+            F = METRIC_FIELDS[p]
+            e = dict(zip(PERF_EMP_KEYS, (emp.get(eid, {}).get(p) or [0] * len(PERF_EMP_KEYS))))
+            a = agg.get((eid, p), Counter())
+            put = lambda key, val: r.__setitem__(F[key], val) if F.get(key) else None
+            put("total_meet", e["total_meet"]); put("fresh_meet", e["fresh_meet"])
+            put("followup_meet", e["followup_meet"]); put("with_mgr_meet_general", e["with_mgr_meet"])
+            put("working_days", e["working_days"])
+            for suf in ("_under", "_over"):
+                put("total_meet" + suf, e["total_meet" + suf])
+                put("followup_meet" + suf, e["followup_meet" + suf])
+                put("with_mgr_meet" + suf, e["with_mgr_meet" + suf])
+            put("hl_assigned", e["hl_assigned"])
+            r[f"self_meet_{p}"] = e["self_meet"]
+            r[f"with_mgr_meet_{p}"] = e["with_mgr_meet"]
+            r[f"total_attempts_{p}"] = e["total_attempts"]
+            r[f"call_answered_{p}"] = e["call_answered"]
+            r[f"avg_tt_secs_{p}"] = e["avg_tt_secs"]
+            r[f"avg_tt_hhmmss_{p}"] = _hhmmss(e["avg_tt_secs"])
+            r[f"hl_meeting_done_{p}"] = e["hl_meeting_done"]
+
+            put("hot_total", a["hot_total"]); put("hot_mgr", a["hot_mgr"])
+            put("hot_self", a["hot_total"] - a["hot_mgr"])
+            put("hp_converted", a["hp_converted"]); put("hp_converted_met", a["hp_converted_met"])
+            put("hp_tp_sum_met", a["hp_tp_sum_met"]); put("hp_tp_over_200", a["hp_tp_over_200"])
+            put("hl_l2_met", a["hl_l2_met"]); put("hl_converted", a["hl_converted"])
+            put("hl_converted_met", a["hl_converted_met"]); put("hl_tp_over_200", a["hl_tp_over_200"])
+            for k in ("combined_total", "combined_l2_met", "combined_converted", "combined_converted_met"):
+                put(k, a[k])
+            for suf in ("_under", "_over"):
+                put("hot_total" + suf, a["hot_total" + suf]); put("hot_mgr" + suf, a["hot_mgr" + suf])
+                put("hp_converted" + suf, a["hp_converted" + suf])
+                put("hp_converted_met" + suf, a["hp_converted_met" + suf])
+                put("hp_tp_over_200" + suf, a["hp_tp_over_200" + suf])
+                put("hl_assigned" + suf, a["hl_assigned_unique" + suf])
+                put("hl_l2_met" + suf, a["hl_l2_met" + suf]); put("hl_converted" + suf, a["hl_converted" + suf])
+                put("hl_converted_met" + suf, a["hl_converted_met" + suf])
+                put("hl_tp_over_200" + suf, a["hl_tp_over_200" + suf])
+                for k in ("combined_total", "combined_l2_met", "combined_converted", "combined_converted_met"):
+                    put(k + suf, a[k + suf])
+    return rows
