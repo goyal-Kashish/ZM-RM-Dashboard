@@ -35,7 +35,8 @@ DASHBOARD_TITLE = os.environ.get("DASHBOARD_TITLE", "ZM / RM / Location Performa
 DASHBOARD_USERNAME = os.environ.get("DASHBOARD_USERNAME", "")
 DASHBOARD_PASSWORD = os.environ.get("DASHBOARD_PASSWORD", "")
 DASHBOARD_USERS_RAW = os.environ.get("DASHBOARD_USERS", "")
-_PUSH_ONLY_PATHS = {"/api/push-data", "/api/push-location-sales"}
+_PUSH_ONLY_PATHS = {"/api/push-data", "/api/push-location-sales",
+                    "/api/push-appinstall", "/api/push-perf"}   # each checks X-Push-Token itself
 
 
 def _parse_dashboard_users():
