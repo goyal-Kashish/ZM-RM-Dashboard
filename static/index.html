@@ -430,7 +430,15 @@ const EMPLOYEE_PERIOD_FIELDS = {
   m3: { sales_count:'sales_done_m3', sales_value:'annual_sale_done_m3', hot_total:null, hot_self:null, hot_mgr:null, total_attempts:null, unique_answered:null, talktime:null, total_meet:'total_meet_m3', fresh_meet:'fresh_meet_m3', followup_meet:'followup_meet_m3', self_meet:'self_meet_m3', with_mgr_meet:'with_mgr_meet_m3', hl_assigned:'top3_hl_m3', hl_done:'hl_meeting_done_m3' },
   m4: { sales_count:'sales_done_m4', sales_value:'annual_sale_done_m4', hot_total:null, hot_self:null, hot_mgr:null, total_attempts:null, unique_answered:null, talktime:null, total_meet:'total_meet_m4', fresh_meet:'fresh_meet_m4', followup_meet:'followup_meet_m4', self_meet:'self_meet_m4', with_mgr_meet:'with_mgr_meet_m4', hl_assigned:'top3_hl_m4', hl_done:'hl_meeting_done_m4' },
 };
-let currentPeriod = 'wtd';          // Performance view period
+// Week periods use the WTD column names with "wtd" swapped for the period
+// (the server writes them that way); sales columns are named separately.
+['w1', 'w2', 'w3', 'l3w'].forEach(p => {
+  const f = {};
+  for(const [k, v] of Object.entries(EMPLOYEE_PERIOD_FIELDS.wtd)) f[k] = v ? v.replace('wtd', p) : v;
+  f.sales_count = 'sales_done_' + p; f.sales_value = 'annual_sale_done_' + p;
+  EMPLOYEE_PERIOD_FIELDS[p] = f;
+});
+let currentPeriod = 'w1';           // Performance view period (latest full week)
 let currentView = 'perf';           // 'perf' | 'app'
 // App Install periods, oldest week first so the tabs read left-to-right in time.
 const APP_PERIOD_ORDER = ['aw3', 'aw2', 'aw1', 'al3w', 'amtd'];
@@ -482,7 +490,23 @@ function fmtCurrency(v){
   if(v === null || v === undefined) return '—';
   return '₹' + Number(v).toLocaleString('en-IN', {maximumFractionDigits:0});
 }
-function hasHotFields(period){ return ['overall','wtd','mtd','m1'].includes(period); }
+const PERF_WEEK_PERIODS = ['w1', 'w2', 'w3', 'l3w'];
+function hasHotFields(period){ return ['wtd','mtd'].concat(PERF_WEEK_PERIODS).includes(period); }
+
+// Display name for a Performance period: weeks get their dates from the
+// server (e.g. "Wk 16–22 Nov"), MTD shows the month.
+function periodLabel(p){
+  const labels = (dashboardData && dashboardData.perf_period_labels) || {};
+  if(p === 'w1' || p === 'w2' || p === 'w3') return 'Wk ' + (labels[p] || p.toUpperCase());
+  if(p === 'l3w') return 'Last 3 weeks';
+  if(p === 'mtd') return PERIOD_LABELS.mtd + ' (MTD)';
+  return PERIOD_LABELS[p] || p;
+}
+
+// The two views share one period choice: Wk 9–15 in Performance is Wk 9–15
+// in App Install, and so on.
+const PERF_TO_APP = { w1:'aw1', w2:'aw2', w3:'aw3', l3w:'al3w', mtd:'amtd' };
+const APP_TO_PERF = { aw1:'w1', aw2:'w2', aw3:'w3', al3w:'l3w', amtd:'mtd' };
 
 function appPeriodLabel(p){
   const labels = (dashboardData && dashboardData.app_period_labels) || {};
@@ -494,8 +518,7 @@ function appPeriodLabel(p){
 function perfPeriods(){
   // Only offer periods the pushed query actually contains (data-driven).
   const avail = dashboardData && dashboardData.available_periods;
-  const keys = Object.keys(PERIOD_LABELS);
-  return (avail && avail.length) ? keys.filter(k => avail.includes(k)) : keys;
+  return (avail && avail.length) ? avail : ['wtd', 'mtd'];
 }
 
 function buildTabs(){
@@ -505,8 +528,8 @@ function buildTabs(){
     entries = APP_PERIOD_ORDER.map(p => [p, appPeriodLabel(p)]);
   } else {
     const keys = perfPeriods();
-    if(!keys.includes(currentPeriod)) currentPeriod = keys[0];
-    entries = keys.map(k => [k, k === 'mtd' ? PERIOD_LABELS.mtd + ' (MTD)' : PERIOD_LABELS[k]]);
+    if(!keys.includes(currentPeriod)) currentPeriod = keys.includes('w1') ? 'w1' : keys.includes('mtd') ? 'mtd' : keys[0];
+    entries = keys.map(k => [k, periodLabel(k)]);
   }
   const active = currentView === 'app' ? currentAppPeriod : currentPeriod;
   entries.forEach(([key,label]) => {
@@ -514,7 +537,13 @@ function buildTabs(){
     tab.className = 'tab' + (key === active ? ' active' : '');
     tab.textContent = label;
     tab.addEventListener('click', () => {
-      if(currentView === 'app') currentAppPeriod = key; else currentPeriod = key;
+      if(currentView === 'app'){
+        currentAppPeriod = key;
+        if(APP_TO_PERF[key] && perfPeriods().includes(APP_TO_PERF[key])) currentPeriod = APP_TO_PERF[key];
+      } else {
+        currentPeriod = key;
+        if(PERF_TO_APP[key]) currentAppPeriod = PERF_TO_APP[key];
+      }
       renderAll();
     });
     tabsEl.appendChild(tab);
@@ -660,7 +689,7 @@ function empScopedTotalMeet(m){
 }
 
 function sumChildMetrics(children){
-  const allPeriods = ['overall','wtd','mtd','m1','m2','m3','m4'];
+  const allPeriods = ['wtd','mtd'].concat(PERF_WEEK_PERIODS);
   const metrics = {};
   let headcount = 0;
   Object.values(children).forEach(child => { headcount += child.headcount; });
@@ -830,7 +859,7 @@ function escHtml(s){ return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp
 // Redash query's scope). Reflects whatever ZM/RM/Location/Vertical filters
 // are currently applied, summed across the filtered tree.
 // ---------------------------------------------------------------------
-const FUNNEL_PERIODS = ['wtd', 'mtd', 'm1'];
+const FUNNEL_PERIODS = ['wtd', 'mtd'].concat(PERF_WEEK_PERIODS);
 
 function fmtPctSimple(numerator, denominator){
   const n = Number(numerator) || 0;
@@ -852,7 +881,7 @@ function renderPerfFunnel(){
     panel.innerHTML = `
       <div class="funnel-col">
         <div class="funnel-header"><h2>Funnels</h2></div>
-        <div class="funnel-unavailable">Funnels are only available on the WTD, ${PERIOD_LABELS.mtd}, and ${PERIOD_LABELS.m1} tabs.</div>
+        <div class="funnel-unavailable">Funnels aren't available for this period.</div>
       </div>`;
     return;
   }
@@ -1056,7 +1085,7 @@ function renderPerfFunnel(){
       <div class="funnel-col">
         <div class="funnel-header">
           <h2>Meeting Funnel</h2>
-          <span class="sub">${escHtml(PERIOD_LABELS[currentPeriod])}${turnoverNote}</span>
+          <span class="sub">${escHtml(periodLabel(currentPeriod))}${turnoverNote}</span>
         </div>
         ${renderStages(meetingStages)}
       </div>
@@ -1064,7 +1093,7 @@ function renderPerfFunnel(){
       <div class="funnel-col">
         <div class="funnel-header">
           <h2>Hot Prospect Funnel</h2>
-          <span class="sub">${escHtml(PERIOD_LABELS[currentPeriod])}${turnoverNote}</span>
+          <span class="sub">${escHtml(periodLabel(currentPeriod))}${turnoverNote}</span>
         </div>
         ${renderStages(hpStages)}
       </div>
@@ -1072,7 +1101,7 @@ function renderPerfFunnel(){
       <div class="funnel-col">
         <div class="funnel-header">
           <h2>Top 3 HL Funnel</h2>
-          <span class="sub">${escHtml(PERIOD_LABELS[currentPeriod])}${turnoverNote}</span>
+          <span class="sub">${escHtml(periodLabel(currentPeriod))}${turnoverNote}</span>
         </div>
         ${renderStages(hlStages)}
       </div>
@@ -1682,7 +1711,7 @@ function buildEmployeeDetailHtml(emp, period){
   return `
     <div class="modal-section-label">Profile</div>
     <div class="kv-grid">${profileRows}</div>
-    <div class="modal-section-label">Performance — ${PERIOD_LABELS[period]}</div>
+    <div class="modal-section-label">Performance — ${escHtml(periodLabel(period))}</div>
     <div class="kv-grid">${perfRows.join('')}</div>
   `;
 }
@@ -1705,7 +1734,7 @@ async function openEmployeeModal(employeeId){
     root.querySelector('.modal').innerHTML = `
       <button class="modal-close" id="modal-close-btn">Close</button>
       <h3>${escHtml(name)}</h3>
-      <div class="sub">Employee ID: ${escHtml(employeeId)} — performance shows ${escHtml(PERIOD_LABELS[currentPeriod])} figures (the period selected in the Performance view)</div>
+      <div class="sub">Employee ID: ${escHtml(employeeId)} — performance shows ${escHtml(periodLabel(currentPeriod))} figures (the period selected in the Performance view)</div>
       ${currentView === 'app' ? buildAppHistoryHtml(findEmployeeSummary(employeeId)) : ''}
       ${buildEmployeeDetailHtml(emp, currentPeriod)}
       ${currentView === 'app' ? '' : buildAppHistoryHtml(findEmployeeSummary(employeeId))}
@@ -1736,7 +1765,8 @@ async function fetchDashboard(force){
     pulseDot.className = 'pulse';
     dashboardData = payload;
     titleEl.textContent = payload.title || 'Dashboard';
-    updatedTextEl.textContent = 'data as of ' + relativeTime(payload.redash_cached_at);
+    updatedTextEl.textContent = 'data as of ' + relativeTime(payload.redash_cached_at) +
+      (payload.perf_meta ? ' · weeks/MTD ' + relativeTime(payload.perf_meta.uploaded_at) : '');
     hierarchyStatusEl.textContent = payload.hierarchy_row_count
       ? `${fmtNum(payload.hierarchy_row_count)} L1s · ${relativeTime(payload.hierarchy_uploaded_at)}`
       : 'not uploaded yet';
