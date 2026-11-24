@@ -355,6 +355,7 @@
   <div class="view-switch" id="view-switch">
     <button type="button" data-view="perf" class="active">Performance</button>
     <button type="button" data-view="app">App Install</button>
+    <button type="button" data-view="ztp">0 TP</button>
   </div>
 
   <div class="filter-row">
@@ -445,7 +446,7 @@ const APP_PERIOD_ORDER = ['awtd', 'aw3', 'aw2', 'aw1', 'al3w', 'amtd'];
 const APP_WEEKS = ['aw3', 'aw2', 'aw1'];
 const APP_KEYS = ['app_met', 'app_before', 'app_after', 'app_none'];
 let currentAppPeriod = 'aw1';       // latest full week
-try{ const v = localStorage.getItem('dash_view'); if(v === 'app' || v === 'perf') currentView = v; }catch(e){}
+try{ const v = localStorage.getItem('dash_view'); if(v === 'app' || v === 'perf' || v === 'ztp') currentView = v; }catch(e){}
 let currentVertical = 'all';
 let dashboardData = null;
 let expanded = { zm: new Set(), rm: new Set(), loc: new Set() };
@@ -572,14 +573,15 @@ function setView(v){
   currentView = v;
   try{ localStorage.setItem('dash_view', v); }catch(e){}
   document.querySelectorAll('#view-switch button').forEach(b => b.classList.toggle('active', b.dataset.view === v));
-  document.getElementById('turnover-wrap').style.display = v === 'app' ? 'none' : 'contents';
+  // Turnover only applies to Performance (app installs and TP aren't split by it).
+  document.getElementById('turnover-wrap').style.display = v === 'perf' ? 'contents' : 'none';
   if(dashboardData) renderAll();
 }
 
 // Dispatchers: everything that used to call renderTree()/renderFunnel()
 // now renders whichever view is active.
-function renderTree(){ if(currentView === 'app') renderAppTree(); else renderPerfTree(); }
-function renderFunnel(){ if(currentView === 'app') renderAppPanel(); else renderPerfFunnel(); }
+function renderTree(){ if(currentView === 'app') renderAppTree(); else if(currentView === 'ztp') contentEl.innerHTML = ''; else renderPerfTree(); }
+function renderFunnel(){ if(currentView === 'app') renderAppPanel(); else if(currentView === 'ztp') renderZtpView(); else renderPerfFunnel(); }
 
 function renderAll(){
   buildTabs();
@@ -1128,8 +1130,7 @@ function renderPerfFunnel(){
 
     <div class="funnel-cards">
       ${cards.map(c => `<div class="funnel-card"><div class="label">${escHtml(c.label)}</div><div class="value">${c.value}</div></div>`).join('')}
-    </div>
-    ${renderZeroTpPanel(tree)}`;
+    </div>`;
 }
 
 // ---------------------------------------------------------------------
@@ -1724,6 +1725,87 @@ function buildAppHistoryHtml(summary){
   return `<div class="modal-section-label">App Install</div>
     <table class="app-hist"><thead><tr><th>Period</th><th>GLIDs Met</th><th>Had App</th><th>Installed After</th><th>Not Installed</th><th>Drive %</th></tr></thead>
     <tbody>${rows}</tbody></table>`;
+}
+
+// ---------------------------------------------------------------------
+// 0 TP view: trend + ranking, summary cards, Top/Bottom 5 L1s and L2s.
+// Lower 0 TP % is better.
+// ---------------------------------------------------------------------
+const ZTP_MIN_L1 = 10;   // meetings before an L1 is ranked
+const ZTP_MIN_L2 = 30;   // team meetings before an L2 is ranked
+
+function ztpLeaderRows(tree, p){
+  const l1 = [], l2 = new Map();
+  for(const z of Object.values(tree)) for(const r of Object.values(z.rm_children))
+    for(const [loc, l] of Object.entries(r.location_children)) for(const e of l.employees){
+      const m = (e.metrics && e.metrics[p]) || {};
+      if(!m.total_meet) continue;
+      const mm = { meet: m.total_meet || 0, zero: m.zero_tp_meet || 0 };
+      l1.push({ id: e.id, name: e.name || e.id, sub: `${loc} · ${e.manager_name || 'No L2'}`, ...mm });
+      const mgr = e.manager_name; if(!mgr) continue;
+      if(!l2.has(mgr)) l2.set(mgr, { name: mgr, locs: new Set(), team: 0, meet: 0, zero: 0 });
+      const g = l2.get(mgr); g.locs.add(loc); g.team += 1; g.meet += mm.meet; g.zero += mm.zero;
+    }
+  const l2rows = [...l2.values()].map(g => ({ name: g.name, meet: g.meet, zero: g.zero,
+    sub: `${g.team} L1${g.team > 1 ? 's' : ''} · ${[...g.locs].slice(0, 2).join(', ')}${g.locs.size > 2 ? ` +${g.locs.size - 2}` : ''}` }));
+  return { l1, l2: l2rows };
+}
+function ztpRank(rows, min){
+  const el = rows.filter(r => r.meet >= min).map(r => Object.assign(r, { v: pctNum(r.zero, r.meet) }));
+  const best = [...el].sort((a, b) => a.v - b.v || b.meet - a.meet).slice(0, 5);
+  const bs = new Set(best);
+  const worst = [...el].sort((a, b) => b.v - a.v || b.meet - a.meet).filter(r => !bs.has(r)).slice(0, 5);
+  return { best, worst, eligible: el.length, total: rows.length };
+}
+function ztpTable(title, rows, kind, overall){
+  if(!rows.length) return `<div class="lead-block"><div class="lead-title">${title}</div><div class="multiselect-empty">Not enough data.</div></div>`;
+  return `<div class="lead-block"><div class="lead-title">${title}</div>
+    <table class="lead-table"><thead><tr><th>${kind}</th><th>Meetings</th><th>0 TP Meetings</th><th>With TP</th><th>0 TP %</th></tr></thead><tbody>
+    ${rows.map(r => `<tr ${r.id ? `data-employee="${escAttr(r.id)}" class="clickable"` : ''}>
+      <td><div class="lead-name">${escHtml(r.name)}</div><div class="lead-sub">${escHtml(r.sub)}</div></td>
+      <td>${fmtNum(r.meet)}</td><td>${fmtNum(r.zero)}</td><td>${fmtNum(r.meet - r.zero)}</td>
+      <td class="${overall !== null && r.v > overall ? 'bad' : 'good'}">${fmtP(r.v)}</td></tr>`).join('')}
+    </tbody></table></div>`;
+}
+function renderZtpView(){
+  const panel = document.getElementById('funnel-panel');
+  const stats = (dashboardData.perf_meta && dashboardData.perf_meta.stats) || {};
+  if(!stats.has_zero_tp){
+    panel.innerHTML = `<div class="app-empty">No 0 TP data yet. It arrives with the daily <code>push_local.py</code> run (performance query 52358).</div>`;
+    return;
+  }
+  const tree = getFilteredTree();
+  const p = currentPeriod;
+  const t = sumOver(tree, p, ['zero_tp_meet', 'total_meet']);
+  const overall = zeroTpOf(t);
+  const cards = [
+    { label: 'Total Meetings', value: fmtNum(t.total_meet) },
+    { label: '0 TP Meetings', value: fmtNum(t.zero_tp_meet) },
+    { label: 'Meetings with TP', value: fmtNum(t.total_meet - t.zero_tp_meet) },
+    { label: '0 TP %', value: fmtP(overall) },
+  ];
+  const { l1, l2 } = ztpLeaderRows(tree, p);
+  const a = ztpRank(l1, ZTP_MIN_L1), b = ztpRank(l2, ZTP_MIN_L2);
+  panel.innerHTML = `
+    ${renderZeroTpPanel(tree)}
+    <div class="funnel-cards">
+      ${cards.map(c => `<div class="funnel-card"><div class="label">${escHtml(c.label)}</div><div class="value">${c.value}</div></div>`).join('')}
+    </div>
+    <div class="lead-grid">
+      <div class="funnel-col">
+        <div class="funnel-header"><h2>L1s — Top 5 &amp; Bottom 5 by 0 TP %</h2>
+          <span class="sub">${escHtml(periodLabel(p))} · lowest 0 TP % is best · ${a.eligible} of ${a.total} L1s ranked (min ${ZTP_MIN_L1} meetings)</span></div>
+        ${ztpTable('Top 5 (lowest 0 TP %)', a.best, 'L1', overall)}${ztpTable('Bottom 5 (highest 0 TP %)', a.worst, 'L1', overall)}
+      </div>
+      <div class="funnel-col">
+        <div class="funnel-header"><h2>L2s — Top 5 &amp; Bottom 5 by 0 TP %</h2>
+          <span class="sub">${escHtml(periodLabel(p))} · team totals · ${b.eligible} of ${b.total} L2s ranked (min ${ZTP_MIN_L2} meetings)</span></div>
+        ${ztpTable('Top 5 (lowest 0 TP %)', b.best, 'L2', overall)}${ztpTable('Bottom 5 (highest 0 TP %)', b.worst, 'L2', overall)}
+      </div>
+    </div>
+    <p class="app-note"><b>0 TP %</b> = meetings where the L1 earned 0 approved TP ÷ all meetings. Lower is better. Not split by turnover.</p>`;
+  panel.querySelectorAll('[data-employee]').forEach(el =>
+    el.addEventListener('click', () => openEmployeeModal(el.dataset.employee)));
 }
 
 // (Search panel removed — search-box no longer exists in the DOM.)
