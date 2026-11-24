@@ -44,7 +44,7 @@ SALES_PERIODS = ["wtd", "mtd", "w1", "w2", "w3", "l3w"]
 SALES_KEYS = ["sales_count", "sales_value", "sales_count_under", "sales_value_under",
               "sales_count_over", "sales_value_over"]
 
-APP_PERIODS = ["aw1", "aw2", "aw3", "al3w", "amtd"]
+APP_PERIODS = ["awtd", "aw1", "aw2", "aw3", "al3w", "amtd"]
 APP_KEYS = ["app_met", "app_before", "app_after", "app_none"]
 
 
@@ -232,7 +232,7 @@ def parse_appinstall_dump(file_bytes):
     return parse_appinstall_rows(_iter_dicts(file_bytes, APPINSTALL_COLUMNS))
 
 
-def parse_appinstall_rows(row_iter):
+def parse_appinstall_rows(row_iter, as_of=None):
     """Meeting-level dump -> per (period, GLID, vertical): the FIRST meeting in
     that period decides who gets credit and whether the app was already there.
 
@@ -242,6 +242,8 @@ def parse_appinstall_rows(row_iter):
 
     Each GLID is counted once per period, so totals roll up by plain addition.
     """
+    as_of = as_of or ist_today()
+    this_monday = as_of - datetime.timedelta(days=as_of.weekday())
     stats = Counter()
     first = {}   # (period_key, glid, vertical) -> (meeting_date, meeting_id, employee_id, location, install_date)
     weeks = set()
@@ -270,6 +272,10 @@ def parse_appinstall_rows(row_iter):
             keys.append("al3w")
         if _norm_text(r["in_mtd"]) == "yes":
             keys.append("amtd")
+        # Week to date: this Monday up to yesterday (the query's flags don't
+        # cover it, but its meeting window does).
+        if this_monday <= md < as_of:
+            keys.append("awtd")
         if not keys:
             stats["outside_periods"] += 1
             continue
@@ -283,7 +289,7 @@ def parse_appinstall_rows(row_iter):
     # Most recent complete week = aw1, then aw2, aw3.
     week_order = sorted(weeks, reverse=True)[:3]
     week_key_to_period = {"wk:" + w.isoformat(): f"aw{i + 1}" for i, w in enumerate(week_order)}
-    labels = {"al3w": "Last 3 weeks", "amtd": "MTD"}
+    labels = {"awtd": "WTD", "al3w": "Last 3 weeks", "amtd": "MTD"}
     for i, w in enumerate(week_order):
         end = w + datetime.timedelta(days=6)
         if w.month == end.month:
@@ -293,7 +299,7 @@ def parse_appinstall_rows(row_iter):
 
     by_owner = {}
     for (k, glid, vid), (md, _m, eid, loc, inst) in first.items():
-        p = week_key_to_period.get(k, k if k in ("al3w", "amtd") else None)
+        p = week_key_to_period.get(k, k if k in ("awtd", "al3w", "amtd") else None)
         if p is None:
             continue
         rec = by_owner.get(eid)
