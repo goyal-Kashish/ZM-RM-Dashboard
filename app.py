@@ -4,9 +4,10 @@ import json
 import time
 import gzip
 from flask import Flask, jsonify, send_from_directory, request, Response
-from threading import Lock
+from threading import Lock, Thread
 
-from dashboard_logic import merge_and_build_tree, tree_payload, normalize_id, apply_authoritative_location_sales, compute_company_headcount_by_rm_location
+from dashboard_logic import merge_and_build_tree, tree_payload, normalize_id, apply_authoritative_location_sales, compute_company_headcount_by_rm_location, EMPLOYEE_ID_FIELD
+import ingest
 
 app = Flask(__name__, static_folder="static", static_url_path="")
 
@@ -89,6 +90,8 @@ HIERARCHY_CACHE_FILE = os.path.join(os.path.dirname(__file__), "hierarchy_cache.
 REDASH_CACHE_FILE = os.path.join(os.path.dirname(__file__), "redash_cache.json")
 LOCATION_SALES_CACHE_FILE = os.path.join(os.path.dirname(__file__), "location_sales_cache.json")
 VISIT_LOG_CACHE_FILE = os.path.join(os.path.dirname(__file__), "visit_log_cache.json")
+SALES_CACHE_FILE = os.path.join(os.path.dirname(__file__), "sales_cache.json")
+APPINSTALL_CACHE_FILE = os.path.join(os.path.dirname(__file__), "appinstall_cache.json")
 VISIT_LOG_MAX_ENTRIES = 2000  # keep the file from growing unbounded over time
 
 _lock = Lock()
@@ -103,7 +106,27 @@ _state = {
     "computed_by_vertical": {},  # cached merge_and_build_tree() results, keyed by vertical filter
     "_company_headcount_by_rm_location": None,  # cached vertical-independent headcount lookup
     "visit_log": [],  # [{name, ts, ip}, ...] -- who's opened the dashboard, name self-reported
+    "sales": None,            # parsed sales dump (see ingest.parse_sales_dump)
+    "sales_uploaded_at": 0,
+    "appinstall": None,       # parsed app-install dump (see ingest.parse_appinstall_dump)
+    "appinstall_uploaded_at": 0,
+    "_prepared": None,        # cached sales/app overlay on top of the Redash rows
 }
+
+
+def dedupe_rows(rows):
+    """The L1 query can return the same employee several times (a join fan-out
+    on manager/location lookups gives identical copies). Counting every copy
+    would multiply headcount and every metric, so keep one row per employee."""
+    seen = set()
+    out = []
+    for r in rows:
+        key = normalize_id(r.get(EMPLOYEE_ID_FIELD))
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(r)
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -141,6 +164,17 @@ def _load_disk_state():
                 _state["visit_log"] = json.load(f).get("entries", [])
         except Exception:
             pass
+    for key, path in (("sales", SALES_CACHE_FILE), ("appinstall", APPINSTALL_CACHE_FILE)):
+        if os.path.exists(path):
+            try:
+                with open(path, "r") as f:
+                    payload = json.load(f)
+                    _state[key] = payload.get("data")
+                    _state[key + "_uploaded_at"] = payload.get("uploaded_at", 0)
+            except Exception:
+                pass
+    if _state["redash_rows"]:
+        _state["redash_rows"] = dedupe_rows(_state["redash_rows"])
 
 
 def _save_redash_cache():
@@ -198,14 +232,18 @@ def push_data():
     if not isinstance(rows, list):
         return jsonify({"ok": False, "error": "Expected JSON body like {\"rows\": [...]}"}), 400
 
+    raw_count = len(rows)
+    rows = dedupe_rows(rows)
     with _lock:
         _state["redash_rows"] = rows
         _state["redash_pushed_at"] = time.time()
+        _state["_prepared"] = None
         _state["computed_by_vertical"] = {}  # invalidate merged cache
         _state["_company_headcount_by_rm_location"] = None  # invalidate too
         _save_redash_cache()
 
-    return jsonify({"ok": True, "row_count": len(rows), "pushed_at": _state["redash_pushed_at"]})
+    return jsonify({"ok": True, "row_count": len(rows), "rows_received": raw_count,
+                    "duplicates_dropped": raw_count - len(rows), "pushed_at": _state["redash_pushed_at"]})
 
 
 @app.route("/api/push-location-sales", methods=["POST"])
@@ -227,8 +265,7 @@ def push_location_sales():
     with _lock:
         _state["location_sales_rows"] = rows
         _state["location_sales_pushed_at"] = time.time()
-        _state["computed_by_vertical"] = {}  # invalidate merged cache
-        _state["_company_headcount_by_rm_location"] = None  # invalidate too
+        _invalidate()
         _save_location_sales_cache()
 
     return jsonify({"ok": True, "row_count": len(rows), "pushed_at": _state["location_sales_pushed_at"]})
@@ -290,8 +327,7 @@ def upload_hierarchy():
         _state["hierarchy_map"] = hierarchy_map
         _state["hierarchy_uploaded_at"] = time.time()
         _state["hierarchy_row_count"] = len(hierarchy_map)
-        _state["computed_by_vertical"] = {}  # invalidate merged cache
-        _state["_company_headcount_by_rm_location"] = None  # invalidate too
+        _invalidate()
         _save_hierarchy_cache()
         try:
             with open(HIERARCHY_FILE, "wb") as out:
@@ -310,6 +346,86 @@ def hierarchy_status():
         "uploaded_at": _state["hierarchy_uploaded_at"],
         "row_count": _state["hierarchy_row_count"],
     })
+
+
+# ---------------------------------------------------------------------------
+# Manual dump uploads: Sales dump + App-install dump (.xlsx exports)
+# ---------------------------------------------------------------------------
+def _save_json(path, data, uploaded_at):
+    try:
+        with open(path, "w") as f:
+            json.dump({"data": data, "uploaded_at": uploaded_at}, f)
+    except Exception:
+        pass
+
+
+def _read_upload():
+    if "file" not in request.files:
+        return None, (jsonify({"ok": False, "error": "No file uploaded"}), 400)
+    return request.files["file"].read(), None
+
+
+def _invalidate():
+    _state["_prepared"] = None
+    _state["computed_by_vertical"] = {}
+    _state["_company_headcount_by_rm_location"] = None
+
+
+@app.route("/api/upload-sales", methods=["POST"])
+def upload_sales():
+    file_bytes, err = _read_upload()
+    if err:
+        return err
+    try:
+        parsed = ingest.parse_sales_dump(file_bytes)
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"Couldn't parse sales dump: {e}"}), 400
+    with _lock:
+        _state["sales"] = parsed
+        _state["sales_uploaded_at"] = time.time()
+        _invalidate()
+        _save_json(SALES_CACHE_FILE, parsed, _state["sales_uploaded_at"])
+    return jsonify({"ok": True, "as_of": parsed["as_of"], "stats": parsed["stats"],
+                    "out_of_scope_verticals": parsed["out_of_scope_verticals"],
+                    "unknown_turnover_values": parsed["unknown_turnover_values"]})
+
+
+_appinstall_job = {"state": "idle"}
+
+
+def _run_appinstall_job(file_bytes):
+    """The app-install export is ~100k rows; reading an .xlsx that size takes
+    longer than a web request is allowed to, so it runs in the background and
+    the page polls /api/upload-appinstall-status."""
+    try:
+        parsed = ingest.parse_appinstall_dump(file_bytes)
+        with _lock:
+            _state["appinstall"] = parsed
+            _state["appinstall_uploaded_at"] = time.time()
+            _invalidate()
+            _save_json(APPINSTALL_CACHE_FILE, parsed, _state["appinstall_uploaded_at"])
+        _appinstall_job.update({"state": "done", "stats": parsed["stats"],
+                                "period_labels": parsed["period_labels"], "finished_at": time.time()})
+    except Exception as e:
+        _appinstall_job.update({"state": "error", "error": f"Couldn't parse app-install dump: {e}"})
+
+
+@app.route("/api/upload-appinstall", methods=["POST"])
+def upload_appinstall():
+    file_bytes, err = _read_upload()
+    if err:
+        return err
+    if _appinstall_job.get("state") == "processing":
+        return jsonify({"ok": False, "error": "An app-install file is already being processed -- wait for it to finish."}), 409
+    _appinstall_job.clear()
+    _appinstall_job.update({"state": "processing", "started_at": time.time()})
+    Thread(target=_run_appinstall_job, args=(file_bytes,), daemon=True).start()
+    return jsonify({"ok": True, "processing": True})
+
+
+@app.route("/api/upload-appinstall-status")
+def upload_appinstall_status():
+    return jsonify(dict(_appinstall_job, ok=True))
 
 
 @app.route("/api/visit-log")
@@ -350,43 +466,64 @@ def filter_rows_by_vertical(rows, vertical):
 # ---------------------------------------------------------------------------
 # Merge + serve
 # ---------------------------------------------------------------------------
+def _prepared():
+    """Redash rows with the sales dump layered on, plus the extras (sales /
+    app-install by people who aren't an L1 row) and per-employee app-install
+    numbers. Built once per push/upload, shared by every vertical view.
+    Must be called with _lock held."""
+    if _state["_prepared"] is None:
+        rows, sales_extras = ingest.overlay_sales_on_rows(_state["redash_rows"], _state["sales"])
+        app_emp, app_extras = ingest.app_by_employee(rows, _state["appinstall"])
+        _state["_prepared"] = {
+            "rows": rows, "sales_extras": sales_extras,
+            "app_emp": app_emp, "app_extras": app_extras,
+        }
+    return _state["_prepared"]
+
+
 def get_computed(vertical="all"):
     with _lock:
         if _state["redash_rows"] is None:
             return None
         cache = _state.setdefault("computed_by_vertical", {})
         key = vertical or "all"
+        prep = _prepared()
 
         # Company-wide (all-vertical) headcount per (RM, location) — needed
         # so an ambiguous location's "true" RM is decided the same way no
-        # matter which vertical someone is currently viewing. Computed once
-        # from the full, unfiltered population and cached until the next
-        # push or hierarchy update invalidates it.
+        # matter which vertical someone is currently viewing. Only used by
+        # the legacy location-sales overlay below.
         if _state.get("_company_headcount_by_rm_location") is None:
             hmap = _state["hierarchy_map"] or {}
-            full_tree = merge_and_build_tree(_state["redash_rows"], hmap)["tree"]
+            full_tree = merge_and_build_tree(prep["rows"], hmap)["tree"]
             _state["_company_headcount_by_rm_location"] = compute_company_headcount_by_rm_location(full_tree)
 
         if key not in cache:
             hmap = _state["hierarchy_map"] or {}
-            rows = filter_rows_by_vertical(_state["redash_rows"], key)
+            rows = filter_rows_by_vertical(prep["rows"], key)
             computed = merge_and_build_tree(rows, hmap)
-            # Authoritative location sales has no vertical breakdown, so this
-            # total always reflects ALL verticals combined -- even when a
-            # specific vertical is selected here. That's intentional: some
-            # sales are attributed directly to L3 (branch managers), which
-            # never appear in the L1-sourced employee breakdown at all, so
-            # the breakdown's sum and this top-level total are allowed to
-            # disagree by design.
             computed["ambiguous_locations"] = []
             computed["unmatched_locations"] = []
-            if _state["location_sales_rows"]:
+
+            # Sales: the uploaded sales dump is the source of truth when it
+            # exists. The old per-location Redash query (13308) is only used
+            # as a fallback, so it can never overwrite dump-based numbers.
+            if _state["sales"] is None and _state["location_sales_rows"]:
                 overlay_result = apply_authoritative_location_sales(
                     computed["tree"], _state["location_sales_rows"],
                     _state["_company_headcount_by_rm_location"],
                 )
                 computed["ambiguous_locations"] = overlay_result["ambiguous"]
                 computed["unmatched_locations"] = overlay_result["unmatched"]
+
+            computed["extras_report"] = {}
+            if _state["sales"] is not None:
+                computed["extras_report"]["sales"] = ingest.apply_extras(
+                    computed["tree"], prep["sales_extras"], key)
+            ingest.apply_app_install(computed["tree"], prep["app_emp"])
+            if _state["appinstall"] is not None:
+                computed["extras_report"]["app"] = ingest.apply_extras(
+                    computed["tree"], prep["app_extras"], key)
             cache[key] = computed
         return cache[key]
 
@@ -425,6 +562,17 @@ def api_dashboard_data():
         payload["unmatched_locations"] = computed.get("unmatched_locations", [])
         payload["served_at"] = time.time()
         payload["selected_vertical"] = vertical
+        payload["available_periods"] = ingest.available_periods(_state["redash_rows"], ["wtd", "mtd", "m1"])
+        payload["app_periods"] = ingest.APP_PERIODS
+        payload["app_period_labels"] = (_state["appinstall"] or {}).get("period_labels", {})
+        payload["sales_meta"] = None if _state["sales"] is None else {
+            "uploaded_at": _state["sales_uploaded_at"], "as_of": _state["sales"]["as_of"],
+            "stats": _state["sales"]["stats"],
+        }
+        payload["app_meta"] = None if _state["appinstall"] is None else {
+            "uploaded_at": _state["appinstall_uploaded_at"], "stats": _state["appinstall"]["stats"],
+        }
+        payload["extras_report"] = computed.get("extras_report", {})
         payload["available_verticals"] = get_available_verticals(_state["redash_rows"])
         return gzip_json_response(payload)
     except Exception as e:

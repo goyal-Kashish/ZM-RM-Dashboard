@@ -71,17 +71,39 @@ your PC needs to stay open — once the push completes, you can close
 everything; the dashboard keeps serving that data to everyone until your
 next push.
 
-## 3. Upload the hierarchy sheet
+## 3. Upload the three files on the dashboard page
 
-Same as before — open the dashboard URL, click **"Upload weekly sheet"**,
-choose your `Required_HC_...xlsx`. Do this once a week, whenever the sheet
-updates. This goes straight to the public server, not through your PC.
+The **HC sheet**, **Sales dump** and **App install** rows (top right) each
+have their own Upload button. They go straight to the server, not through
+your PC.
+
+| File | How often | What it drives |
+|---|---|---|
+| HC sheet (`Required_HC_...xlsx`) | weekly | ZM / RM / AM mapping |
+| Sales dump (receipt export .xlsx) | daily | Total Sales + Annual Sales (WTD / MTD) |
+| App install dump (ClickHouse meeting-level export) | daily | the App Install view |
+
+Sales rules applied to the dump: date = `Entered On`; `Receipt Status` in
+Cleared / Pending; `Sale Status` in Hosted / Unused; one sale per receipt;
+credited to `Claimed By ID`; annual = `mode` is Normal; only the four FSF
+verticals. Sales by people who aren't L1s in the main query count at their
+location; partner offices not in the hierarchy show under
+"(Partner / outside hierarchy)" so company totals always equal the dump.
+
+App install: each GLID counts once per period (per vertical), credited to the
+L1 who did the first meeting with it. Had App = installed before that
+meeting, Installed After = installed on/after it, Not Installed = still no app.
+Drive % = Installed After / (Installed After + Not Installed). The app-install
+file takes ~15-30 s to process; the page shows progress and refreshes itself.
+
+**After every redeploy on Render** the server forgets everything: run
+`push_local.py` once, then upload the HC sheet, sales dump and app-install dump.
 
 ## What stays the same day-to-day
 
-- **You**: run `push_local.py` daily, upload the hierarchy sheet weekly.
-- **Everyone else**: just opens the permanent URL — no PC dependency, no
-  ngrok warning page, no "is Kashish's laptop on" uncertainty.
+- **You**: run `push_local.py` daily and upload the sales + app-install dumps;
+  upload the HC sheet weekly.
+- **Everyone else**: just opens the permanent URL.
 
 ## Security notes
 

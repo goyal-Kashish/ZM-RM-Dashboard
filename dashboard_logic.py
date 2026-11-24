@@ -152,7 +152,7 @@ METRIC_FIELDS = {
     },
 }
 
-UNDERPERFORMER_METRIC = "sales_done"   # overall sales count; ranks within each location group
+UNDERPERFORMER_METRIC = "month_sales_done"   # MTD sales count (from the sales dump); ranks within each location group
 UNDERPERFORMER_PCT = 0.20              # bottom 20% flagged, minimum 1 per group if group is non-empty
 UNDERPERFORMER_MIN_TENURE_DAYS = 90    # employees newer than this are never flagged
 TENURE_FIELD = "tenure"                # assumed to be in days

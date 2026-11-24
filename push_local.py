@@ -1,23 +1,29 @@
-"""
+r"""
 Run this once a day from a machine that can reach your Redash instance
 (e.g. your work PC, on the office network/VPN).
 
-It fetches the latest cached results from BOTH your Redash queries — the main
-L1 performance query and the location-level sales query — then pushes both
-to your publicly-hosted dashboard. The dashboard server itself never needs
-Redash credentials or network access — only this script does.
+It fetches the latest cached result of the main L1 performance query (14600)
+and pushes it to your hosted dashboard. The dashboard server itself never
+needs Redash credentials or network access -- only this script does.
+
+Sales now come from the sales dump you upload on the dashboard page, and app
+installs from the app-install dump, so the old location-sales query (13308)
+is no longer needed. It is only pushed if REDASH_QUERY_ID_LOCATION_SALES is
+set (and the dashboard only uses it while no sales dump has been uploaded).
 
 Setup (one time):
     pip install requests
 
-Run (every day, or whenever you want fresh numbers):
-    set REDASH_BASE_URL=https://redash.intermesh.net
-    set REDASH_API_KEY=your-key
-    set REDASH_QUERY_ID=14600
-    set REDASH_QUERY_ID_LOCATION_SALES=13308
-    set DASHBOARD_URL=https://your-app.onrender.com
-    set PUSH_TOKEN=whatever-secret-you-set-on-the-server
+Run (every day, or whenever you want fresh numbers) -- in PowerShell:
+    cd $env:USERPROFILE\Downloads\redash-dashboard-v2\redash-dashboard-v2
+    $env:REDASH_BASE_URL="https://redash.intermesh.net"
+    $env:REDASH_API_KEY="your-key"
+    $env:REDASH_QUERY_ID="14600"
+    $env:DASHBOARD_URL="https://your-app.onrender.com"
+    $env:PUSH_TOKEN="whatever-secret-you-set-on-the-server"
     python push_local.py
+
+(In the old cmd.exe window use `set NAME=value` instead of `$env:NAME="value"`.)
 """
 
 import os
@@ -62,7 +68,7 @@ def main():
     base_url = env_or_die("REDASH_BASE_URL")
     api_key = env_or_die("REDASH_API_KEY")
     query_id = env_or_die("REDASH_QUERY_ID")
-    location_sales_query_id = env_or_die("REDASH_QUERY_ID_LOCATION_SALES")
+    location_sales_query_id = os.environ.get("REDASH_QUERY_ID_LOCATION_SALES", "").strip()
     dashboard_url = env_or_die("DASHBOARD_URL")
     push_token = env_or_die("PUSH_TOKEN")
 
@@ -74,12 +80,18 @@ def main():
         sys.exit(1)
     result = push_to_dashboard(dashboard_url, push_token, "/api/push-data", rows)
     if result.get("ok"):
-        print(f"Success — dashboard now has {result['row_count']} L1 rows as of this push.")
+        dropped = result.get("duplicates_dropped") or 0
+        extra = f" ({dropped} duplicate rows from the query were dropped)" if dropped else ""
+        print(f"Success -- dashboard now has {result['row_count']} L1 rows as of this push{extra}.")
     else:
         print(f"Push failed: {result.get('error')}")
         sys.exit(1)
 
-    # --- Location-level sales query ---
+    # --- Location-level sales query (optional, legacy) ---
+    if not location_sales_query_id:
+        print()
+        print("Done. Now upload today's sales dump and app-install dump on the dashboard page.")
+        return
     print()
     print("=== Location sales query ===")
     location_rows = fetch_from_redash(base_url, api_key, location_sales_query_id)
