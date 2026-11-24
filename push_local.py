@@ -133,6 +133,13 @@ def push_to_dashboard(dashboard_url, push_token, endpoint, body):
     url = f"{dashboard_url.rstrip('/')}{endpoint}"
     print(f"Pushing to: {url}")
     resp = requests.post(url, json=body, headers={"X-Push-Token": push_token}, timeout=180)
+    if 400 <= resp.status_code < 500:
+        # The server explains what's wrong (e.g. wrong query) -- show that
+        # instead of a bare "400 Bad Request".
+        try:
+            return {"ok": False, "error": resp.json().get("error", resp.text[:300])}
+        except ValueError:
+            return {"ok": False, "error": f"HTTP {resp.status_code}: {resp.text[:300]}"}
     resp.raise_for_status()
     return resp.json()
 
@@ -204,11 +211,6 @@ def main():
     rows = fetch_from_redash(base_url, api_key, query_id)
     if not rows:
         print("WARNING: Redash returned 0 rows for the main query. Not pushing -- check your query.")
-        sys.exit(1)
-    if "fk_employeeid" not in rows[0]:
-        print(f"ERROR: query {query_id} doesn't look like the main L1 query (no fk_employeeid column; "
-              f"got {sorted(rows[0].keys())[:6]}...). Not pushing. Check REDASH_QUERY_ID and that "
-              f"query {query_id} still has the main L1 SQL.")
         sys.exit(1)
     result = push_to_dashboard(dashboard_url, push_token, "/api/push-data", {"rows": rows})
     if result.get("ok"):
