@@ -236,6 +236,14 @@ def push_data():
     if not isinstance(rows, list):
         return jsonify({"ok": False, "error": "Expected JSON body like {\"rows\": [...]}"}), 400
 
+    # Guard: only the main L1 query (14600) may replace the base data. A
+    # different query pushed here would collapse into one blank row and
+    # empty the whole dashboard.
+    if rows and not any(isinstance(r, dict) and r.get(EMPLOYEE_ID_FIELD) not in (None, "") for r in rows[:50]):
+        cols = sorted(rows[0].keys())[:8] if isinstance(rows[0], dict) else []
+        return jsonify({"ok": False, "error": f"These rows have no '{EMPLOYEE_ID_FIELD}' column -- this isn't the main "
+                        f"L1 query (14600). Nothing was changed. Columns seen: {cols}"}), 400
+
     raw_count = len(rows)
     rows = dedupe_rows(rows)
     with _lock:
@@ -620,7 +628,7 @@ def api_dashboard_data():
         # App Install ones (3 weeks, last 3 weeks, MTD); otherwise WTD / MTD
         # straight from the main query.
         perf = _state["perf"]
-        payload["available_periods"] = (["w3", "w2", "w1", "l3w", "mtd"] if perf
+        payload["available_periods"] = (["wtd", "l3w", "mtd"] if perf
                                         else ingest.available_periods(_state["redash_rows"], ["wtd", "mtd"]))
         payload["perf_period_labels"] = (perf or {}).get("period_labels", {})
         payload["perf_meta"] = None if perf is None else {
