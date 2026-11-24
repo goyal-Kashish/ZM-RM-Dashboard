@@ -168,6 +168,10 @@ for _p in WEEK_PERIODS:
     })
 PERIODS += WEEK_PERIODS
 
+# Meetings where the L1 earned 0 approved TP (from the performance query).
+for _p in ["wtd", "mtd"] + WEEK_PERIODS:
+    METRIC_FIELDS[_p]["zero_tp_meet"] = f"zero_tp_meet_{_p}"
+
 UNDERPERFORMER_METRIC = "month_sales_done"   # MTD sales count (from the sales dump); ranks within each location group
 UNDERPERFORMER_PCT = 0.20              # bottom 20% flagged, minimum 1 per group if group is non-empty
 UNDERPERFORMER_MIN_TENURE_DAYS = 90    # employees newer than this are never flagged
@@ -302,6 +306,8 @@ def build_node_metrics(rows):
             agg["total_meet"] += _num(r, fields["total_meet"]) or 0
             agg["followup_meet"] += _num(r, fields["followup_meet"]) or 0
             agg["with_mgr_meet_general"] += _num(r, fields["with_mgr_meet_general"]) or 0
+            if fields.get("zero_tp_meet"):
+                agg["zero_tp_meet"] = agg.get("zero_tp_meet", 0) + (_num(r, fields["zero_tp_meet"]) or 0)
             if has_meeting_turnover:
                 agg["total_meet_under"] += _num(r, fields["total_meet_under"]) or 0
                 agg["followup_meet_under"] += _num(r, fields["followup_meet_under"]) or 0
