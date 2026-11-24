@@ -217,6 +217,20 @@ def main():
               f"got {sorted(rows[0].keys())[:6]}...). Not pushing. Check REDASH_QUERY_ID and that "
               f"query {query_id} still has the main L1 SQL.")
         sys.exit(1)
+    # The query repeats each L1 several times (join fan-out). Send one row per
+    # L1 -- the same rows the server would keep -- so the upload stays small
+    # enough for the free Render instance (14k rows made it run out of memory).
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from dashboard_logic import normalize_id
+    seen, unique_rows = set(), []
+    for r in rows:
+        k = normalize_id(r.get("fk_employeeid"))
+        if k in seen:
+            continue
+        seen.add(k)
+        unique_rows.append(r)
+    print(f"  {len(rows)} rows -> {len(unique_rows)} unique L1s (duplicates dropped before sending)")
+    rows = unique_rows
     result = push_to_dashboard(dashboard_url, push_token, "/api/push-data", {"rows": rows})
     if result.get("ok"):
         dropped = result.get("duplicates_dropped") or 0
