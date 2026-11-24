@@ -108,8 +108,14 @@ def fetch_from_redash(base_url, api_key, query_id):
     url = f"{base_url.rstrip('/')}/api/queries/{query_id}/results.json"
     print(f"Fetching from Redash: {url}")
     resp = requests.get(url, params={"api_key": api_key}, timeout=300)
-    resp.raise_for_status()
-    qr = resp.json().get("query_result", {})
+    if resp.status_code == 404:
+        # Redash says 404 when the query has no saved result yet (e.g. it
+        # was just edited and saved). Not fatal -- run it instead.
+        print("  Redash has no saved result for this query yet -- running it now.")
+        qr = {}
+    else:
+        resp.raise_for_status()
+        qr = resp.json().get("query_result", {})
     if not _is_from_today(qr):
         try:
             qr = _refresh_query(base_url, api_key, query_id)
