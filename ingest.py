@@ -517,6 +517,7 @@ def parse_perf_rows(row_iter, as_of=None):
     stats = Counter()
     emp = {}
     leads = []
+    mgr = {}     # L2 id -> {"name": ..., "p": {period: [attempts, answered, avg_tt_secs]}}
     for r in row_iter:
         kind = _norm_text(r.get("row_kind"))
         period = _norm_text(r.get("period"))
@@ -543,10 +544,33 @@ def parse_perf_rows(row_iter, as_of=None):
                           is_hl, hl_a.isoformat() if (is_hl and hl_a) else "",
                           int(_num0(r.get("hl_with_mgr")) > 0), int(_num0(r.get("hl_tp_over_200")) > 0)])
             stats["lead_rows"] += 1
+        elif kind == "mgr":
+            rec = mgr.setdefault(eid, {"name": str(r.get("name") or "").strip(), "p": {}})
+            rec["p"][period] = [_num0(r.get("total_attempts")), _num0(r.get("call_answered")),
+                                round(_num0(r.get("avg_tt_secs")), 1)]
+            stats["mgr_rows"] += 1
         else:
             stats["dropped_bad_row"] += 1
     return {"as_of": as_of.isoformat(), "period_labels": week_labels(as_of),
-            "emp": emp, "leads": leads, "stats": dict(stats)}
+            "emp": emp, "leads": leads, "mgr": mgr, "stats": dict(stats)}
+
+
+def l2_calls_by_name(perf):
+    """L2 own-call numbers keyed by L2 name (the tree groups L1s under their
+    manager's name). Names shared by two different L2s are left out rather
+    than mixed up."""
+    out, seen = {}, {}
+    for eid, rec in ((perf or {}).get("mgr") or {}).items():
+        name = rec.get("name")
+        if not name:
+            continue
+        if name in seen and seen[name] != eid:
+            out[name] = None
+            continue
+        seen[name] = eid
+        out[name] = {p: {"attempts": int(v[0]), "answered": int(v[1]), "talktime": _hhmmss(v[2])}
+                     for p, v in rec["p"].items()}
+    return {k: v for k, v in out.items() if v}
 
 
 def _hhmmss(secs):
