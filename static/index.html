@@ -441,7 +441,7 @@ const EMPLOYEE_PERIOD_FIELDS = {
 let currentPeriod = 'wtd';          // Performance view period: WTD | Last 3 weeks | MTD
 let currentView = 'perf';           // 'perf' | 'app'
 // App Install periods, oldest week first so the tabs read left-to-right in time.
-const APP_PERIOD_ORDER = ['aw3', 'aw2', 'aw1', 'al3w', 'amtd'];
+const APP_PERIOD_ORDER = ['awtd', 'aw3', 'aw2', 'aw1', 'al3w', 'amtd'];
 const APP_WEEKS = ['aw3', 'aw2', 'aw1'];
 const APP_KEYS = ['app_met', 'app_before', 'app_after', 'app_none'];
 let currentAppPeriod = 'aw1';       // latest full week
@@ -522,13 +522,13 @@ function periodLabel(p){
 
 // The two views share one period choice: Wk 9–15 in Performance is Wk 9–15
 // in App Install, and so on.
-const PERF_TO_APP = { w1:'aw1', w2:'aw2', w3:'aw3', l3w:'al3w', mtd:'amtd' };
-const APP_TO_PERF = { aw1:'w1', aw2:'w2', aw3:'w3', al3w:'l3w', amtd:'mtd' };
+const PERF_TO_APP = { wtd:'awtd', w1:'aw1', w2:'aw2', w3:'aw3', l3w:'al3w', mtd:'amtd' };
+const APP_TO_PERF = { awtd:'wtd', aw1:'w1', aw2:'w2', aw3:'w3', al3w:'l3w', amtd:'mtd' };
 
 function appPeriodLabel(p){
   const labels = (dashboardData && dashboardData.app_period_labels) || {};
   const wk = computedWeekLabels();
-  const fallback = { aw1:wk['1'], aw2:wk['2'], aw3:wk['3'], al3w:'Last 3 weeks', amtd:'MTD' };
+  const fallback = { awtd:'WTD', aw1:wk['1'], aw2:wk['2'], aw3:wk['3'], al3w:'Last 3 weeks', amtd:'MTD' };
   const l = labels[p] || fallback[p] || p;
   return APP_WEEKS.includes(p) ? 'Wk ' + l : l;
 }
