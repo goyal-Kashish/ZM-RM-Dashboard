@@ -1281,7 +1281,13 @@ function renderPerfTree(){
                   <div class="emp-num">${fmtNum(agg.convertedMet)}</div>
                   <div class="emp-num">${fmtNum(agg.scoped_meet)}</div>
                   <div class="emp-num">${fmtPctSimple(agg.fresh_meet, agg.total_meet)}</div>
-                  <div class="emp-num" title="Not averaged across the team — talktime needs raw seconds + call-days to combine correctly, which aren't exposed per-group. Shown per employee only.">—</div>
+                  ${(() => {
+                    // The L2's OWN calls (not a team average), from the performance query.
+                    const own = ((dashboardData.l2_calls || {})[mgr] || {})[currentPeriod];
+                    return own
+                      ? `<div class="emp-num" title="${escAttr(mgr)}'s own calls: ${fmtNum(own.attempts)} attempts, ${fmtNum(own.answered)} answered">${escHtml(own.talktime)}</div>`
+                      : `<div class="emp-num" title="No calls by this L2 in this period">—</div>`;
+                  })()}
                 </div>`;
 
                 for(const emp of teamList){
