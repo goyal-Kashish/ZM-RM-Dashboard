@@ -258,6 +258,10 @@
   .upload-panel .upl-status{ color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .upload-panel .upl-status.warn{ color:var(--rust); }
   .upload-panel button{ padding:4px 10px; white-space:nowrap; }
+  .upload-panel .upl-auto{ font-size:10.5px; font-weight:700; color:var(--teal); background:var(--teal-soft);
+    border-radius:20px; padding:2px 9px; justify-self:start; white-space:nowrap; }
+  .upload-panel .btn-subtle{ font-weight:500; color:var(--muted); border-color:transparent; background:none; }
+  .upload-panel .btn-subtle:hover{ color:var(--navy); border-color:var(--hairline); }
   @media (max-width: 700px){
     .upload-panel{ grid-template-columns:auto minmax(0,1fr) auto; }
     .upload-panel .upl-status{ grid-column:1 / -1; order:0; white-space:normal; }
@@ -324,8 +328,9 @@
 
         <span class="upl-name">App install</span>
         <span class="upl-status" id="app-status">—</span>
-        <input type="file" id="app-file" accept=".xlsx,.csv" />
-        <button id="app-upload">Upload</button>
+        <input type="file" id="app-file" accept=".xlsx,.csv" hidden />
+        <span class="upl-auto" title="Filled automatically by the daily push_local.py run (Redash query 52336)">auto · daily</span>
+        <button id="app-upload" class="btn-subtle" title="Backup only: upload the meeting-level export by hand if the automatic push failed">Manual upload…</button>
       </div>
     </div>
   </header>
@@ -1319,7 +1324,7 @@ function appBreakdownNodes(tree){
 function renderAppPanel(){
   const panel = document.getElementById('funnel-panel');
   if(!dashboardData.app_meta){
-    panel.innerHTML = `<div class="app-empty">No app-install data yet. Upload the meeting-level app-install dump in the <b>App install</b> row at the top right.</div>`;
+    panel.innerHTML = `<div class="app-empty">No app-install data yet. It arrives with the daily <code>push_local.py</code> run (Redash query 52336); if that failed, use <b>Manual upload…</b> in the App install row.</div>`;
     return;
   }
   const tree = getFilteredTree();
@@ -1801,11 +1806,14 @@ function updateDumpStatuses(payload){
   const am = payload.app_meta;
   if(am){
     const st = am.stats || {};
-    appStatusEl.textContent = `${fmtNum(st.meetings_read)} meetings · ${relativeTime(am.uploaded_at)}`;
-    appStatusEl.title = appStatusEl.textContent;
-    appStatusEl.classList.remove('warn');
+    const src = am.source === 'redash' ? 'from Redash' : 'manual file';
+    const ageDays = (Date.now() / 1000 - am.uploaded_at) / 86400;
+    appStatusEl.textContent = `${src} · ${fmtNum(st.meetings_read)} meetings · ${relativeTime(am.uploaded_at)}`;
+    appStatusEl.title = appStatusEl.textContent + (ageDays > 1.5 ? ' — older than a day: check the daily push_local.py run' : '');
+    // Flag it if the daily automatic push seems to have stopped.
+    appStatusEl.classList.toggle('warn', ageDays > 1.5);
   } else {
-    appStatusEl.textContent = 'not uploaded yet';
+    appStatusEl.textContent = 'waiting for the daily push';
     appStatusEl.classList.add('warn');
   }
 }
@@ -1856,27 +1864,29 @@ async function pollAppJob(){
     alert('Lost connection while the app-install file was processing — press Refresh data in a minute.');
   } finally {
     appJobPolling = false;
-    appUploadBtn.disabled = false; appUploadBtn.textContent = 'Upload';
+    appUploadBtn.disabled = false; appUploadBtn.textContent = 'Manual upload…';
     await fetchDashboard(false);
   }
 }
-appUploadBtn.addEventListener('click', async () => {
+// App install arrives automatically; the button only opens a file picker as a backup.
+appUploadBtn.addEventListener('click', () => appFileInput.click());
+appFileInput.addEventListener('change', async () => {
   const file = appFileInput.files[0];
-  if(!file){ alert('Choose the app-install dump (.xlsx) first.'); return; }
+  if(!file) return;
   appUploadBtn.disabled = true; appUploadBtn.textContent = 'Uploading…';
   appStatusEl.textContent = 'uploading…';
   try{
     const payload = await postFile('/api/upload-appinstall', file);
     if(!payload.ok){
       alert('Upload failed: ' + payload.error);
-      appUploadBtn.disabled = false; appUploadBtn.textContent = 'Upload';
+      appUploadBtn.disabled = false; appUploadBtn.textContent = 'Manual upload…';
       return;
     }
     appFileInput.value = '';
     await pollAppJob();
   } catch(e){
     alert('Upload failed: connection error.');
-    appUploadBtn.disabled = false; appUploadBtn.textContent = 'Upload';
+    appUploadBtn.disabled = false; appUploadBtn.textContent = 'Manual upload…';
   }
 });
 
