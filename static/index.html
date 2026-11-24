@@ -495,9 +495,26 @@ function hasHotFields(period){ return ['wtd','mtd'].concat(PERF_WEEK_PERIODS).in
 
 // Display name for a Performance period: weeks get their dates from the
 // server (e.g. "Wk 16–22 Nov"), MTD shows the month.
+// Dates of the last 3 full Mon–Sun weeks, worked out from today (IST), so
+// the week tabs always show real dates even before any data has arrived.
+function computedWeekLabels(){
+  const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const ist = new Date(Date.now() + (330 + new Date().getTimezoneOffset()) * 60000);
+  const today = new Date(ist.getFullYear(), ist.getMonth(), ist.getDate());
+  const monday = new Date(today); monday.setDate(today.getDate() - ((today.getDay() + 6) % 7));
+  const out = {};
+  ['1', '2', '3'].forEach((n, i) => {
+    const s = new Date(monday); s.setDate(monday.getDate() - 7 * (i + 1));
+    const e = new Date(s); e.setDate(s.getDate() + 6);
+    out[n] = s.getMonth() === e.getMonth() ? `${s.getDate()}–${e.getDate()} ${MON[e.getMonth()]}`
+                                           : `${s.getDate()} ${MON[s.getMonth()]}–${e.getDate()} ${MON[e.getMonth()]}`;
+  });
+  return out;
+}
+
 function periodLabel(p){
   const labels = (dashboardData && dashboardData.perf_period_labels) || {};
-  if(p === 'w1' || p === 'w2' || p === 'w3') return 'Wk ' + (labels[p] || p.toUpperCase());
+  if(p === 'w1' || p === 'w2' || p === 'w3') return 'Wk ' + (labels[p] || computedWeekLabels()[p.slice(1)]);
   if(p === 'l3w') return 'Last 3 weeks';
   if(p === 'mtd') return PERIOD_LABELS.mtd + ' (MTD)';
   return PERIOD_LABELS[p] || p;
@@ -510,7 +527,8 @@ const APP_TO_PERF = { aw1:'w1', aw2:'w2', aw3:'w3', al3w:'l3w', amtd:'mtd' };
 
 function appPeriodLabel(p){
   const labels = (dashboardData && dashboardData.app_period_labels) || {};
-  const fallback = { aw1:'Last week', aw2:'Week −2', aw3:'Week −3', al3w:'Last 3 weeks', amtd:'MTD' };
+  const wk = computedWeekLabels();
+  const fallback = { aw1:wk['1'], aw2:wk['2'], aw3:wk['3'], al3w:'Last 3 weeks', amtd:'MTD' };
   const l = labels[p] || fallback[p] || p;
   return APP_WEEKS.includes(p) ? 'Wk ' + l : l;
 }
