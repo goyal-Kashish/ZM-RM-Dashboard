@@ -292,6 +292,23 @@
   .hbar-fill.bad{ background:var(--rust); }
   .hbar-avg{ position:absolute; top:-3px; bottom:-3px; width:2px; background:var(--text); }
   .hbar-row .hb-val{ font-family:Consolas,monospace; text-align:right; font-variant-numeric:tabular-nums; }
+  .lead-grid{ display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:16px; }
+  @media (max-width: 900px){ .lead-grid{ grid-template-columns:1fr; } }
+  .lead-block + .lead-block{ margin-top:14px; }
+  .lead-title{ font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:0.05em; color:var(--navy); margin-bottom:4px; }
+  .lead-table{ width:100%; border-collapse:collapse; font-size:12.5px; table-layout:fixed; }
+  .lead-table th{ font-size:9.5px; text-transform:uppercase; letter-spacing:0.03em; color:var(--muted); font-weight:600;
+    text-align:right; padding:5px 6px; border-bottom:1px solid var(--hairline); }
+  .lead-table th:first-child{ text-align:left; width:46%; }
+  .lead-table td{ padding:6px; border-bottom:1px solid #EEF0F2; text-align:right;
+    font-family:Consolas,monospace; font-variant-numeric:tabular-nums; }
+  .lead-table td:first-child{ text-align:left; font-family:inherit; }
+  .lead-table td.good{ color:var(--teal); font-weight:700; }
+  .lead-table td.bad{ color:var(--rust); font-weight:700; }
+  .lead-table tr.clickable{ cursor:pointer; }
+  .lead-table tr.clickable:hover{ background:var(--navy-soft); }
+  .lead-name{ font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .lead-sub{ font-size:10.5px; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .app-note{ font-size:11.5px; color:var(--muted); margin:10px 2px 0; line-height:1.5; }
   .app-empty{ background:var(--panel); border:1px solid var(--hairline); border-radius:var(--radius); padding:40px; text-align:center; color:var(--muted); }
   .modal table.app-hist{ width:100%; border-collapse:collapse; font-size:12.5px; }
@@ -1396,8 +1413,77 @@ function renderAppPanel(){
     <div class="funnel-cards">
       ${cards.map(c => `<div class="funnel-card"><div class="label">${escHtml(c.label)}</div><div class="value">${c.value}</div></div>`).join('')}
     </div>
+    ${renderAppLeaders(tree, p, drive)}
     <p class="app-note">Each GLID is counted once per period (per vertical), credited to the L1 who did the first meeting with it in that period.
       <b>Drive %</b> = installed after the meeting ÷ GLIDs that didn't have the app at the meeting. <b>Coverage %</b> = GLIDs that now have the app ÷ GLIDs met.${outsideNote}</p>`;
+  panel.querySelectorAll('[data-employee]').forEach(el =>
+    el.addEventListener('click', () => openEmployeeModal(el.dataset.employee)));
+}
+
+// ---------------------------------------------------------------------
+// Top 5 / Bottom 5 L1s and L2s by Drive %, within the current filters.
+// Only people with enough GLIDs without the app are ranked, so one lucky
+// install out of two meetings doesn't top the list.
+// ---------------------------------------------------------------------
+const LEADER_MIN_L1 = 10;   // GLIDs without app at the meeting
+const LEADER_MIN_L2 = 30;
+
+function appLeaderRows(tree, p){
+  const l1 = [], l2 = new Map();
+  for(const z of Object.values(tree)) for(const r of Object.values(z.rm_children))
+    for(const [loc, l] of Object.entries(r.location_children)) for(const e of l.employees){
+      const m = e.metrics[p] || {};
+      if(!m.app_met) continue;
+      l1.push({ id:e.id, name:e.name || e.id, sub:`${loc} · ${e.manager_name || 'No L2'}`, m });
+      const mgr = e.manager_name;
+      if(!mgr) continue;
+      if(!l2.has(mgr)) l2.set(mgr, { name:mgr, locs:new Set(), team:0, m:{ app_met:0, app_before:0, app_after:0, app_none:0 } });
+      const g = l2.get(mgr);
+      g.locs.add(loc); g.team += 1;
+      APP_KEYS.forEach(k => { g.m[k] += m[k] || 0; });
+    }
+  const l2rows = [...l2.values()].map(g => ({ name:g.name,
+    sub:`${g.team} L1${g.team > 1 ? 's' : ''} · ${[...g.locs].slice(0, 2).join(', ')}${g.locs.size > 2 ? ` +${g.locs.size - 2}` : ''}`, m:g.m }));
+  return { l1, l2:l2rows };
+}
+
+function rankTopBottom(rows, minBase){
+  const eligible = rows.filter(r => driveBase(r.m) >= minBase)
+    .map(r => Object.assign(r, { d:driveOf(r.m) }));
+  // Best first; ties broken by the bigger base (more installs driven).
+  const best = [...eligible].sort((a, b) => b.d - a.d || driveBase(b.m) - driveBase(a.m));
+  const worst = [...eligible].sort((a, b) => a.d - b.d || driveBase(b.m) - driveBase(a.m));
+  const top = best.slice(0, 5);
+  const topSet = new Set(top);
+  return { top, bottom: worst.filter(r => !topSet.has(r)).slice(0, 5), eligible: eligible.length, total: rows.length };
+}
+
+function leaderTable(title, rows, kind, avg){
+  if(!rows.length) return `<div class="lead-block"><div class="lead-title">${title}</div><div class="multiselect-empty">Not enough data.</div></div>`;
+  return `<div class="lead-block"><div class="lead-title">${title}</div>
+    <table class="lead-table"><thead><tr><th>${kind}</th><th>GLIDs Met</th><th>No App</th><th>Installed After</th><th>Drive %</th></tr></thead><tbody>
+    ${rows.map(r => `<tr ${r.id ? `data-employee="${escAttr(r.id)}" class="clickable"` : ''}>
+      <td><div class="lead-name">${escHtml(r.name)}</div><div class="lead-sub">${escHtml(r.sub)}</div></td>
+      <td>${fmtNum(r.m.app_met)}</td><td>${fmtNum(driveBase(r.m))}</td><td>${fmtNum(r.m.app_after)}</td>
+      <td class="${avg !== null && r.d < avg ? 'bad' : 'good'}">${fmtP(r.d)}</td></tr>`).join('')}
+    </tbody></table></div>`;
+}
+
+function renderAppLeaders(tree, p, avg){
+  const { l1, l2 } = appLeaderRows(tree, p);
+  const a = rankTopBottom(l1, LEADER_MIN_L1), b = rankTopBottom(l2, LEADER_MIN_L2);
+  return `<div class="lead-grid">
+    <div class="funnel-col">
+      <div class="funnel-header"><h2>L1s — Top 5 &amp; Bottom 5 by Drive %</h2>
+        <span class="sub">${escHtml(appPeriodLabel(p))} · ${a.eligible} of ${a.total} L1s ranked (min ${LEADER_MIN_L1} GLIDs without app)</span></div>
+      ${leaderTable('Top 5', a.top, 'L1', avg)}${leaderTable('Bottom 5', a.bottom, 'L1', avg)}
+    </div>
+    <div class="funnel-col">
+      <div class="funnel-header"><h2>L2s — Top 5 &amp; Bottom 5 by Drive %</h2>
+        <span class="sub">${escHtml(appPeriodLabel(p))} · ${b.eligible} of ${b.total} L2s ranked (min ${LEADER_MIN_L2} GLIDs without app) · team totals</span></div>
+      ${leaderTable('Top 5', b.top, 'L2', avg)}${leaderTable('Bottom 5', b.bottom, 'L2', avg)}
+    </div>
+  </div>`;
 }
 
 function appCellsHtml(m, avgDrive, minBase, cellClass){
