@@ -444,6 +444,7 @@ def build_employee_summary(row):
             "combined_converted_over": _num(row, fields["combined_converted_over"]) or 0,
             "combined_converted_met_over": _num(row, fields["combined_converted_met_over"]) or 0,
             "total_meet": _num(row, fields["total_meet"]) or 0,
+            "zero_tp_meet": _num(row, fields.get("zero_tp_meet")) or 0,
             "fresh_meet": _num(row, fields["fresh_meet"]) or 0,
             "avg_talktime": row.get(TALKTIME_FIELD_BY_PERIOD[period]),
         }
