@@ -8,7 +8,10 @@ What it does:
      HERE on your PC into per-L1 totals (same logic as the dashboard's manual
      upload) and only that small result is pushed. Skipped if
      REDASH_QUERY_ID_APP_INSTALL is not set.
-  3. Location-sales query (13308)       -> legacy, only if
+  3. Performance-by-period query        -> last 3 weeks + MTD for the
+     Performance tabs, crunched here like app install. Skipped if
+     REDASH_QUERY_ID_PERF is not set.
+  4. Location-sales query (13308)       -> legacy, only if
      REDASH_QUERY_ID_LOCATION_SALES is set. Not needed any more: sales come
      from the sales dump you upload on the dashboard page.
 
@@ -29,6 +32,7 @@ Run -- in PowerShell:
     $env:REDASH_API_KEY="your-key"
     $env:REDASH_QUERY_ID="14600"
     $env:REDASH_QUERY_ID_APP_INSTALL="52336"
+    $env:REDASH_QUERY_ID_PERF="<id of the new performance-by-period query>"
     $env:DASHBOARD_URL="https://zm-rm-dashboard.onrender.com"
     $env:PUSH_TOKEN="whatever-secret-you-set-on-the-server"
     python push_local.py
@@ -161,11 +165,35 @@ def push_app_install(base_url, api_key, query_id, dashboard_url, push_token):
     return False
 
 
+def push_perf(base_url, api_key, query_id, dashboard_url, push_token):
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import ingest
+
+    rows = fetch_from_redash(base_url, api_key, query_id)
+    if not rows:
+        print("WARNING: performance-by-period query returned 0 rows. Not pushing.")
+        return False
+    missing = [c for c in ingest.PERF_REQUIRED if c not in rows[0]]
+    if missing:
+        print(f"ERROR: performance-by-period query is missing columns {missing}.")
+        return False
+    parsed = ingest.parse_perf_rows(rows)
+    print(f"  Crunched {len(rows)} rows: {parsed['stats']}; periods {parsed['period_labels']}")
+    result = push_to_dashboard(dashboard_url, push_token, "/api/push-perf", {"parsed": parsed})
+    if result.get("ok"):
+        print(f"Success -- last-3-weeks / MTD performance updated ({result['employees']} L1s, "
+              f"{result['leads']} HP/HL leads).")
+        return True
+    print(f"Push failed: {result.get('error')}")
+    return False
+
+
 def main():
     base_url = env_or_die("REDASH_BASE_URL")
     api_key = env_or_die("REDASH_API_KEY")
     query_id = env_or_die("REDASH_QUERY_ID")
     app_query_id = os.environ.get("REDASH_QUERY_ID_APP_INSTALL", "").strip()
+    perf_query_id = os.environ.get("REDASH_QUERY_ID_PERF", "").strip()
     location_sales_query_id = os.environ.get("REDASH_QUERY_ID_LOCATION_SALES", "").strip()
     dashboard_url = env_or_die("DASHBOARD_URL")
     push_token = env_or_die("PUSH_TOKEN")
@@ -196,7 +224,17 @@ def main():
             print(f"App-install push failed: {e}")
             failed = True
 
-    # --- 3. Location-level sales query (optional, legacy) ---
+    # --- 3. Performance by period (last 3 weeks + MTD) ---
+    if perf_query_id:
+        print()
+        print("=== Performance-by-period query ===")
+        try:
+            failed |= not push_perf(base_url, api_key, perf_query_id, dashboard_url, push_token)
+        except Exception as e:
+            print(f"Performance-by-period push failed: {e}")
+            failed = True
+
+    # --- 4. Location-level sales query (optional, legacy) ---
     if location_sales_query_id:
         print()
         print("=== Location sales query (legacy) ===")
