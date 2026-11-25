@@ -268,6 +268,26 @@
   }
 
   /* ---- View switch ---- */
+  .act-level{ display:inline-flex; border:1px solid var(--hairline); border-radius:7px; overflow:hidden; margin:2px 0 4px; }
+  .act-level button{ border:0; background:#fff; padding:4px 12px; font-size:12px; font-weight:600; color:var(--navy); cursor:pointer; }
+  .act-level button + button{ border-left:1px solid var(--hairline); }
+  .act-level button.active{ background:var(--navy); color:#fff; }
+  .act-scroll{ max-height:560px; overflow:auto; }
+  .act-scroll thead th{ position:sticky; top:0; background:#fff; z-index:1; }
+  .ask-claude{ margin-left:10px; vertical-align:top; padding:8px 14px; border-radius:9px; border:1px solid #C96442;
+    background:#FBF1EC; color:#9A4527; font-weight:700; font-size:13px; cursor:pointer; }
+  .ask-claude:hover{ background:#F6E2D8; }
+  .ac-modal{ position:fixed; inset:0; background:rgba(15,23,42,.45); z-index:60; display:flex; align-items:center; justify-content:center; padding:16px; }
+  .ac-modal[hidden]{ display:none; }
+  .ac-box{ background:#fff; border-radius:12px; width:min(720px,100%); max-height:90vh; display:flex; flex-direction:column; padding:16px; gap:10px; }
+  .ac-head{ display:flex; justify-content:space-between; align-items:center; font-size:15px; color:var(--navy); }
+  .ac-head button{ border:0; background:none; font-size:16px; cursor:pointer; color:var(--muted); }
+  .ac-msg{ margin:0; font-size:13px; color:var(--text); line-height:1.45; }
+  #ac-text{ width:100%; min-height:260px; flex:1; font-family:Consolas,monospace; font-size:11.5px; border:1px solid var(--hairline); border-radius:8px; padding:8px; resize:vertical; }
+  .ac-actions{ display:flex; gap:10px; justify-content:flex-end; }
+  .ac-actions button, .ac-actions a{ padding:8px 14px; border-radius:8px; font-size:13px; font-weight:700; text-decoration:none; cursor:pointer; }
+  .ac-actions button{ border:1px solid var(--hairline); background:#fff; color:var(--navy); }
+  .ac-actions a{ background:#C96442; color:#fff; border:1px solid #C96442; }
   .view-switch{ display:inline-flex; border:1px solid var(--navy); border-radius:9px; overflow:hidden; margin-bottom:14px; }
   .view-switch button{
     border:none; border-radius:0; padding:8px 18px; font-size:13px; background:var(--panel); color:var(--navy);
@@ -371,6 +391,18 @@
     <button type="button" data-view="app">App Install</button>
     <button type="button" data-view="ztp">0 TP</button>
     <button type="button" data-view="act">Activation</button>
+  </div>
+  <button type="button" id="ask-claude" class="ask-claude" title="Copies the data you're looking at (this tab, period and filters) and opens Claude. Paste it there and ask anything.">Ask Claude ↗</button>
+  <div id="ask-claude-modal" class="ac-modal" hidden>
+    <div class="ac-box">
+      <div class="ac-head"><b>Ask Claude</b><button type="button" id="ac-close" aria-label="Close">✕</button></div>
+      <p class="ac-msg" id="ac-msg"></p>
+      <textarea id="ac-text" readonly></textarea>
+      <div class="ac-actions">
+        <button type="button" id="ac-copy">Copy again</button>
+        <a id="ac-open" href="https://claude.ai/new" target="_blank" rel="noopener">Open Claude ↗</a>
+      </div>
+    </div>
   </div>
 
   <div class="filter-row">
@@ -1875,6 +1907,8 @@ function actTable(kind, rows, t, withSub){
       <td>${fmtNum(r.multi)}</td><td class="${cls(r.mp, t.mp)}">${fmtP(r.mp)}</td><td>${fmtNum(r.sales)}</td></tr>`).join('')}
     </tbody></table>`;
 }
+let actBreakLevel = 'ZM';
+try{ const v = localStorage.getItem('act_level'); if(['ZM', 'RM', 'Location'].includes(v)) actBreakLevel = v; }catch(e){}
 function renderActView(){
   const panel = document.getElementById('funnel-panel');
   let tree = getFilteredTree();
@@ -1898,8 +1932,17 @@ function renderActView(){
     weeks.push({ label: `${lab} · Multi`, value: a.mp || 0, display: fmtP(a.mp), pct: `${fmtNum(a.multi)} L1s`,
                  color: w === p ? 'var(--teal)' : '#8FC1B5' });
   });
-  const { level, nodes } = appBreakdownNodes(tree);
-  const rows = nodes.map(([name, node]) => ({ name, ...activationOf(node, p) }))
+  // Breakdown table: ZM / RM / Location, picked with the small switch.
+  const level = actBreakLevel;
+  const nodes = [];
+  for(const [zm, z] of Object.entries(tree)){
+    if(level === 'ZM'){ nodes.push([zm, z, '']); continue; }
+    for(const [rm, r] of Object.entries(z.rm_children)){
+      if(level === 'RM'){ nodes.push([rm, r, zm]); continue; }
+      for(const [loc, l] of Object.entries(r.location_children)) nodes.push([loc, l, rm]);
+    }
+  }
+  const rows = nodes.map(([name, node, sub]) => ({ name, sub, ...activationOf(node, p) }))
     .filter(r => r.hc > 0)
     .sort((a, b) => b.sp - a.sp || b.mp - a.mp || b.hc - a.hc);
   const l2 = actL2Rank(tree, p);
@@ -1913,8 +1956,10 @@ function renderActView(){
         ${renderBarStages(weeks)}
       </div>
       <div class="funnel-col">
-        <div class="funnel-header"><h2>Activation by ${level}</h2><span class="sub">${escHtml(periodLabel(p))} · red = below overall (Single ${fmtP(t.sp)}, Multi ${fmtP(t.mp)})</span></div>
-        ${actTable(level, rows, t, false)}
+        <div class="funnel-header"><h2>Activation by ${level}</h2>
+          <span class="act-level">${['ZM', 'RM', 'Location'].map(l => `<button type="button" data-act-level="${l}" class="${l === level ? 'active' : ''}">${l}</button>`).join('')}</span>
+          <span class="sub">${escHtml(periodLabel(p))} · ${rows.length} ${level === 'Location' ? 'locations' : level + 's'} · red = below overall (Single ${fmtP(t.sp)}, Multi ${fmtP(t.mp)})</span></div>
+        <div class="act-scroll">${actTable(level, rows, t, level !== 'ZM')}</div>
       </div>
     </div>
     <div class="lead-grid">
@@ -1930,6 +1975,11 @@ function renderActView(){
       </div>
     </div>
     <p class="app-note"><b>Single Activation %</b> = L1s with 1+ sales in the period ÷ L1s mapped in the HC sheet. <b>Multi Activation %</b> = L1s with 2+ sales ÷ L1s mapped. Unmapped / Partner buckets are excluded. Sales come from the uploaded sales dump and follow the Turnover filter.</p>`;
+  panel.querySelectorAll('[data-act-level]').forEach(b => b.addEventListener('click', () => {
+    actBreakLevel = b.dataset.actLevel;
+    try{ localStorage.setItem('act_level', actBreakLevel); }catch(e){}
+    renderActView();
+  }));
 }
 
 // Activation summary tree: ZM -> RM -> Location -> L2. Hover a row to see
@@ -2030,6 +2080,144 @@ function renderActTree(){
     });
   });
 }
+
+// ---------------------------------------------------------------------
+// "Ask Claude": copies the data on screen (current tab, period, filters)
+// as a ready-made prompt and opens claude.ai. Each person pastes it into
+// their own Claude account -- nothing is sent anywhere by the dashboard.
+// ---------------------------------------------------------------------
+function acTable(cols, rows){
+  const esc = v => String(v ?? '').replace(/\|/g, '/');
+  return [`| ${cols.join(' | ')} |`, `|${cols.map(() => '---').join('|')}|`]
+    .concat(rows.map(r => `| ${r.map(esc).join(' | ')} |`)).join('\n');
+}
+function acPct(n, d){ const v = pctNum(n, d); return v === null ? '' : v.toFixed(1) + '%'; }
+function acMetricSpec(view){
+  // [column names, fn(list of employees, node or null) -> values]
+  const sum = (emps, p, k) => emps.reduce((t, e) => t + ((e.metrics && e.metrics[p] && e.metrics[p][k]) || 0), 0);
+  if(view === 'act'){
+    const p = currentPeriod;
+    return { p, label: periodLabel(p), cols: ['L1s', '1+ sales', 'Single %', '2+ sales', 'Multi %', 'Total sales'],
+      vals: emps => { const a = activationOf(emps, p); return [a.hc, a.single, acPct(a.single, a.hc), a.multi, acPct(a.multi, a.hc), a.sales]; } };
+  }
+  if(view === 'ztp'){
+    const p = currentPeriod;
+    return { p, label: periodLabel(p), cols: ['L1s', 'Meetings', '0 TP meetings', '0 TP %'],
+      vals: emps => { const m = sum(emps, p, 'total_meet'), z = sum(emps, p, 'zero_tp_meet'); return [emps.length, m, z, acPct(z, m)]; } };
+  }
+  if(view === 'app'){
+    const p = currentAppPeriod;
+    return { p, label: appPeriodLabel(p), cols: ['L1s', 'GLIDs met', 'Had app', 'Installed after', 'Not installed', 'Drive %', 'Coverage %'],
+      vals: emps => { const m = {}; APP_KEYS.forEach(k => m[k] = sum(emps, p, k));
+        return [emps.length, m.app_met, m.app_before, m.app_after, m.app_none, acPct(m.app_after, m.app_after + m.app_none), acPct(m.app_before + m.app_after, m.app_met)]; } };
+  }
+  const p = currentPeriod;
+  return { p, label: periodLabel(p), cols: ['L1s', 'Sales', 'Meetings', 'Avg meetings/L1', 'HP/HL leads', 'HP/HL converted', '0 TP %'],
+    vals: emps => { const m = sum(emps, p, 'total_meet'), z = sum(emps, p, 'zero_tp_meet');
+      return [emps.length, sum(emps, p, 'sales_count'), m, emps.length ? (m / emps.length).toFixed(1) : '', sum(emps, p, 'combined_total'), sum(emps, p, 'combined_converted'), acPct(z, m)]; } };
+}
+function buildClaudePrompt(){
+  const view = currentView;
+  const viewName = { perf: 'Performance', app: 'App Install', ztp: '0 TP', act: 'Activation' }[view] || view;
+  const spec = acMetricSpec(view);
+  const tree = Object.fromEntries(Object.entries(getFilteredTree()).filter(([k]) => !k.startsWith('(')));
+  const all = Object.values(tree).flatMap(nodeEmployees);
+  const filters = [
+    `Vertical: ${currentVertical === 'all' ? 'All' : currentVertical}`,
+    `ZM: ${currentZmFilter === 'all' ? 'All' : currentZmFilter}`,
+    `RM: ${currentRmFilter === 'all' ? 'All' : currentRmFilter}`,
+    `Location: ${currentLocationFilter.length ? currentLocationFilter.join(', ') : 'All'}`,
+  ];
+  if(view === 'perf' || view === 'act') filters.push(`Turnover: ${{ all: 'All', under: '<1.5Cr', over: '>=1.5Cr', no_gst: 'No GST' }[currentTurnoverFilter] || currentTurnoverFilter}`);
+  const defs = {
+    act: 'Single Activation % = L1s with 1+ sales / L1s mapped. Multi Activation % = L1s with 2+ sales / L1s mapped.',
+    ztp: '0 TP % = meetings where the L1 earned 0 approved TP / all meetings (lower is better). Unapproved TP counts as 0, so the current week can look high.',
+    app: 'Drive % = installed after the meeting / (installed after + not installed). Coverage % = (had app + installed after) / GLIDs met.',
+    perf: 'Sales = sales from the uploaded sales dump. HP/HL = Hot Prospects + Top-3 HL leads (deduplicated). 0 TP % = meetings with 0 approved TP / all meetings.',
+  }[view];
+
+  const out = [];
+  out.push(`I'm sharing data from our IndiaMART field-sales dashboard (ZM → RM → Location → L2 → L1 executives).`);
+  out.push(`Tab: ${viewName} · Period: ${spec.label} · ${filters.join(' · ')}`);
+  out.push(`Definitions: ${defs}`);
+  out.push('');
+  out.push(`## Overall`);
+  out.push(acTable(['Scope'].concat(spec.cols), [['Total'].concat(spec.vals(all))]));
+
+  // Week-by-week for the same scope, when the tab has weekly periods.
+  const weekKeys = view === 'app' ? ['aw3', 'aw2', 'aw1'] : ['w3', 'w2', 'w1'];
+  const avail = view === 'app' ? APP_PERIOD_ORDER : perfPeriods();
+  if(weekKeys.every(w => avail.includes(w))){
+    const saved = [currentPeriod, currentAppPeriod];
+    const rows = weekKeys.map(w => { if(view === 'app') currentAppPeriod = w; else currentPeriod = w;
+      const sp = acMetricSpec(view); return [sp.label].concat(sp.vals(all)); });
+    [currentPeriod, currentAppPeriod] = saved;
+    out.push('');
+    out.push(`## Last 3 full weeks (same filters)`);
+    out.push(acTable(['Week'].concat(spec.cols), rows));
+  }
+
+  const { level, nodes } = appBreakdownNodes(tree);
+  out.push('');
+  out.push(`## By ${level}`);
+  out.push(acTable([level].concat(spec.cols), nodes.map(([n, node]) => [n].concat(spec.vals(nodeEmployees(node))))));
+
+  // L2 teams (with their location), capped to keep the paste a sensible size.
+  const l2 = new Map();
+  for(const z of Object.values(tree)) for(const r of Object.values(z.rm_children))
+    for(const [loc, l] of Object.entries(r.location_children)) for(const e of l.employees){
+      const key = (e.manager_name || '(No L2)') + ' — ' + loc;
+      if(!l2.has(key)) l2.set(key, []); l2.get(key).push(e);
+    }
+  const l2rows = [...l2.entries()].sort((a, b) => b[1].length - a[1].length);
+  const L2_MAX = 150;
+  out.push('');
+  out.push(`## By L2 team${l2rows.length > L2_MAX ? ` (largest ${L2_MAX} of ${l2rows.length} teams)` : ''}`);
+  out.push(acTable(['L2 — Location'].concat(spec.cols), l2rows.slice(0, L2_MAX).map(([k, emps]) => [k].concat(spec.vals(emps)))));
+
+  // Individual L1s only when the selection is small enough.
+  const L1_MAX = 300;
+  if(all.length <= L1_MAX){
+    out.push('');
+    out.push(`## By L1 executive`);
+    out.push(acTable(['L1', 'L2'].concat(spec.cols.slice(1)),
+      all.map(e => [e.name || e.id, e.manager_name || ''].concat(spec.vals([e]).slice(1)))));
+  } else {
+    out.push('');
+    out.push(`(Individual L1 rows left out: ${all.length} L1s in this selection. Filter down to an RM or location to include them.)`);
+  }
+  out.push('');
+  out.push(`Please start with a short summary: the 3–5 most important highlights, the biggest concerns (who and how much), and 3 concrete actions for the ZMs. Then I'll ask follow-up questions.`);
+  return out.join('\n');
+}
+async function acCopy(text){
+  try{ await navigator.clipboard.writeText(text); return true; }
+  catch(e){
+    const ta = document.getElementById('ac-text'); ta.focus(); ta.select();
+    try{ return document.execCommand('copy'); }catch(_){ return false; }
+  }
+}
+(function initAskClaude(){
+  const btn = document.getElementById('ask-claude'), modal = document.getElementById('ask-claude-modal');
+  const ta = document.getElementById('ac-text'), msg = document.getElementById('ac-msg');
+  btn.addEventListener('click', async () => {
+    if(!dashboardData){ return; }
+    const text = buildClaudePrompt();
+    ta.value = text;
+    modal.hidden = false;
+    const ok = await acCopy(text);
+    msg.innerHTML = ok
+      ? `<b>Copied!</b> Claude is opening in a new tab — sign in with your own Claude account, press <b>Ctrl+V</b> in the message box and send. Then ask follow-ups like “which L2s need attention?”.`
+      : `Select all the text below (Ctrl+A, Ctrl+C), then open Claude and paste it.`;
+    if(ok) window.open('https://claude.ai/new', '_blank', 'noopener');
+  });
+  document.getElementById('ac-copy').addEventListener('click', async () => {
+    const ok = await acCopy(ta.value);
+    msg.innerHTML = ok ? '<b>Copied again.</b> Paste it into Claude with Ctrl+V.' : 'Select the text below and copy it with Ctrl+C.';
+  });
+  document.getElementById('ac-close').addEventListener('click', () => { modal.hidden = true; });
+  modal.addEventListener('click', ev => { if(ev.target === modal) modal.hidden = true; });
+})();
 
 // (Search panel removed — search-box no longer exists in the DOM.)
 
