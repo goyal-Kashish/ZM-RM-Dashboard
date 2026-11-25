@@ -1966,19 +1966,19 @@ function renderActTree(){
   for(const zm of byHc(tree)){
     const zmNode = tree[zm], zmOpen = expanded.zm.has(zm);
     const st = actRowStats(nodeEmployees(zmNode), p);
-    html += `<div class="tree-row depth-0" data-toggle="zm" data-key="${escAttr(zm)}" ${actTipAttr(zm, st, true)}>
+    html += `<div class="tree-row depth-0" data-toggle="zm" data-key="${escAttr(zm)}">
       <div class="name-cell"><span class="caret">${zmOpen ? '▼' : '▶'}</span>${escHtml(zm)}</div>${actCells(st)}</div>`;
     if(!zmOpen) continue;
     for(const rm of byHc(zmNode.rm_children)){
       const rmNode = zmNode.rm_children[rm], rmKey = zm + '||' + rm, rmOpen = expanded.rm.has(rmKey);
       const rst = actRowStats(nodeEmployees(rmNode), p);
-      html += `<div class="tree-row depth-1" data-toggle="rm" data-key="${escAttr(rmKey)}" ${actTipAttr(rm, rst, true)}>
+      html += `<div class="tree-row depth-1" data-toggle="rm" data-key="${escAttr(rmKey)}">
         <div class="name-cell"><span class="caret">${rmOpen ? '▼' : '▶'}</span>${escHtml(rm)}</div>${actCells(rst)}</div>`;
       if(!rmOpen) continue;
       for(const loc of byHc(rmNode.location_children)){
         const locNode = rmNode.location_children[loc], locKey = rmKey + '||' + loc, locOpen = expanded.loc.has(locKey);
         const lst = actRowStats(locNode.employees, p);
-        html += `<div class="tree-row depth-2" data-toggle="loc" data-key="${escAttr(locKey)}" ${actTipAttr(loc, lst, true)}>
+        html += `<div class="tree-row depth-2" data-toggle="loc" data-key="${escAttr(locKey)}">
           <div class="name-cell"><span class="caret">${locOpen ? '▼' : '▶'}</span>${escHtml(loc)}</div>${actCells(lst)}</div>`;
         if(!locOpen) continue;
         const byMgr = new Map();
