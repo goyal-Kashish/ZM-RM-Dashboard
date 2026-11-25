@@ -423,6 +423,7 @@ def build_employee_summary(row):
         fields = METRIC_FIELDS[period]
         summary["metrics"][period] = {
             "sales_count": _num(row, fields["sales_count"]) or 0,
+            "sales_value": _num(row, fields.get("sales_value")) or 0,
             "hot_total": _num(row, fields["hot_total"]) or 0,
             "hot_mgr": _num(row, fields["hot_mgr"]) or 0,
             "hp_converted": _num(row, fields["hp_converted"]) or 0,
