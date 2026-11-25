@@ -313,6 +313,7 @@
   .lead-table th{ font-size:9.5px; text-transform:uppercase; letter-spacing:0.03em; color:var(--muted); font-weight:600;
     text-align:right; padding:5px 6px; border-bottom:1px solid var(--hairline); }
   .lead-table th:first-child{ text-align:left; width:46%; }
+  #funnel-panel .act-table th:first-child{ width:34%; }
   .lead-table td{ padding:6px; border-bottom:1px solid #EEF0F2; text-align:right;
     font-family:Consolas,monospace; font-variant-numeric:tabular-nums; }
   .lead-table td:first-child{ text-align:left; font-family:inherit; }
@@ -1837,9 +1838,10 @@ function nodeEmployees(node){
 }
 function activationOf(nodeOrList, p){
   const emps = Array.isArray(nodeOrList) ? nodeOrList : nodeEmployees(nodeOrList);
-  const a = { hc: emps.length, single: 0, multi: 0 };
+  const a = { hc: emps.length, single: 0, multi: 0, sales: 0 };
   for(const e of emps){
     const n = Math.round(scopedValue((e.metrics && e.metrics[p]) || null, 'sales_count'));
+    a.sales += n;
     if(n >= 1) a.single++;
     if(n >= 2) a.multi++;
   }
@@ -1867,10 +1869,10 @@ function actL2Rank(tree, p){
 function actTable(kind, rows, t, withSub){
   if(!rows.length) return `<div class="multiselect-empty">Not enough data.</div>`;
   const cls = (v, o) => o !== null && v !== null && v < o ? 'bad' : 'good';
-  return `<table class="lead-table"><thead><tr><th>${kind}</th><th>L1s</th><th>1+ Sales</th><th>Single %</th><th>2+ Sales</th><th>Multi %</th></tr></thead><tbody>
+  return `<table class="lead-table act-table"><thead><tr><th>${kind}</th><th>L1s</th><th>1+ Sales</th><th>Single %</th><th>2+ Sales</th><th>Multi %</th><th>Total Sales</th></tr></thead><tbody>
     ${rows.map(r => `<tr><td><div class="lead-name">${escHtml(r.name)}</div>${withSub ? `<div class="lead-sub">${escHtml(r.sub)}</div>` : ''}</td>
       <td>${fmtNum(r.hc)}</td><td>${fmtNum(r.single)}</td><td class="${cls(r.sp, t.sp)}">${fmtP(r.sp)}</td>
-      <td>${fmtNum(r.multi)}</td><td class="${cls(r.mp, t.mp)}">${fmtP(r.mp)}</td></tr>`).join('')}
+      <td>${fmtNum(r.multi)}</td><td class="${cls(r.mp, t.mp)}">${fmtP(r.mp)}</td><td>${fmtNum(r.sales)}</td></tr>`).join('')}
     </tbody></table>`;
 }
 function renderActView(){
@@ -1944,9 +1946,10 @@ function actRowStats(emps, p){
   return { ...a, sales, list };
 }
 function actCells(st){
-  return `<div class="num">${fmtNum(st.hc)}</div><div class="num">${fmtNum(st.sales)}</div>
+  return `<div class="num">${fmtNum(st.hc)}</div>
     <div class="num">${fmtNum(st.single)}</div><div class="num">${fmtP(st.sp)}</div>
-    <div class="num">${fmtNum(st.multi)}</div><div class="num">${fmtP(st.mp)}</div>`;
+    <div class="num">${fmtNum(st.multi)}</div><div class="num">${fmtP(st.mp)}</div>
+    <div class="num">${fmtNum(st.sales)}</div>`;
 }
 function actTipAttr(title, st, onlyActive){
   actTips.push({ title, list: onlyActive ? st.list.filter(x => x.n > 0) : st.list, total: st.hc, onlyActive });
@@ -1958,9 +1961,10 @@ function renderActTree(){
   const tree = Object.fromEntries(Object.entries(getFilteredTree()).filter(([k]) => !k.startsWith('(')));
   let html = `<div class="tree-panel act-mode">
     <div class="tree-header">
-      <div>Name</div><div class="num">Total L1</div><div class="num">Total Sales</div>
+      <div>Name</div><div class="num">Total L1</div>
       <div class="num">Single Active (1+)</div><div class="num">Single %</div>
       <div class="num">Multi Active (2+)</div><div class="num">Multi %</div>
+      <div class="num">Total Sales</div>
     </div>`;
   const byHc = (obj) => Object.keys(obj).sort((a, b) => (obj[b].headcount - obj[a].headcount) || a.localeCompare(b));
   for(const zm of byHc(tree)){
