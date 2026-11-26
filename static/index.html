@@ -305,7 +305,10 @@
   .tree-panel.act-mode .tree-header, .tree-panel.act-mode .tree-row{
     grid-template-columns: minmax(220px,2fr) repeat(7, 95px);
   }
-  .tree-panel.act-mode .depth-3{ cursor:default; }
+  .tree-panel.rev-mode .tree-header, .tree-panel.rev-mode .tree-row{
+    grid-template-columns: minmax(220px,2fr) repeat(5, 110px);
+  }
+  .tree-panel.act-mode .depth-3, .tree-panel.rev-mode .depth-3{ cursor:default; }
   .tree-panel.act-mode .depth-3:hover .name-cell{ text-decoration:none; }
   #act-tip{ position:fixed; z-index:50; display:none; max-width:340px; max-height:360px; overflow:hidden;
     background:#fff; border:1px solid var(--hairline); border-radius:8px; box-shadow:0 6px 20px rgba(0,0,0,.14);
@@ -391,6 +394,7 @@
     <button type="button" data-view="app">App Install</button>
     <button type="button" data-view="ztp">0 TP</button>
     <button type="button" data-view="act">Activation</button>
+    <button type="button" data-view="rev">Manager Review</button>
   </div>
   <button type="button" id="ask-claude" class="ask-claude" title="Copies the data you're looking at (this tab, period and filters) and opens Claude. Paste it there and ask anything.">Ask Claude ↗</button>
   <div id="ask-claude-modal" class="ac-modal" hidden>
@@ -493,7 +497,7 @@ const APP_PERIOD_ORDER = ['awtd', 'aw3', 'aw2', 'aw1', 'al3w', 'amtd'];
 const APP_WEEKS = ['aw3', 'aw2', 'aw1'];
 const APP_KEYS = ['app_met', 'app_before', 'app_after', 'app_none'];
 let currentAppPeriod = 'aw1';       // latest full week
-try{ const v = localStorage.getItem('dash_view'); if(v === 'app' || v === 'perf' || v === 'ztp' || v === 'act') currentView = v; }catch(e){}
+try{ const v = localStorage.getItem('dash_view'); if(['app', 'perf', 'ztp', 'act', 'rev'].includes(v)) currentView = v; }catch(e){}
 let currentVertical = 'all';
 let dashboardData = null;
 let expanded = { zm: new Set(), rm: new Set(), loc: new Set() };
@@ -628,8 +632,8 @@ function setView(v){
 
 // Dispatchers: everything that used to call renderTree()/renderFunnel()
 // now renders whichever view is active.
-function renderTree(){ if(currentView === 'app') renderAppTree(); else if(currentView === 'ztp') contentEl.innerHTML = ''; else if(currentView === 'act') renderActTree(); else renderPerfTree(); }
-function renderFunnel(){ if(currentView === 'app') renderAppPanel(); else if(currentView === 'ztp') renderZtpView(); else if(currentView === 'act') renderActView(); else renderPerfFunnel(); }
+function renderTree(){ if(currentView === 'app') renderAppTree(); else if(currentView === 'ztp') contentEl.innerHTML = ''; else if(currentView === 'act') renderActTree(); else if(currentView === 'rev') renderRevTree(); else renderPerfTree(); }
+function renderFunnel(){ if(currentView === 'app') renderAppPanel(); else if(currentView === 'ztp') renderZtpView(); else if(currentView === 'act') renderActView(); else if(currentView === 'rev') renderRevView(); else renderPerfFunnel(); }
 
 function renderAll(){
   buildTabs();
@@ -2102,6 +2106,11 @@ function acMetricSpec(view){
     return { p, label: periodLabel(p), cols: ['L1s', '1+ sales', 'Single %', '2+ sales', 'Multi %', 'Total sales', 'Annual sales'],
       vals: emps => { const a = activationOf(emps, p); return [a.hc, a.single, acPct(a.single, a.hc), a.multi, acPct(a.multi, a.hc), a.sales, Math.round(a.value)]; } };
   }
+  if(view === 'rev'){
+    const p = currentPeriod;
+    return { p, label: periodLabel(p), cols: ['L1s', 'Alone meetings', 'Reviewed by manager', 'Not reviewed', 'Review %'],
+      vals: emps => { const r = reviewOf(emps, p); return [r.hc, r.alone, r.reviewed, r.alone - r.reviewed, acPct(r.reviewed, r.alone)]; } };
+  }
   if(view === 'ztp'){
     const p = currentPeriod;
     return { p, label: periodLabel(p), cols: ['L1s', 'Meetings', '0 TP meetings', '0 TP %'],
@@ -2120,7 +2129,7 @@ function acMetricSpec(view){
 }
 function buildClaudePrompt(){
   const view = currentView;
-  const viewName = { perf: 'Performance', app: 'App Install', ztp: '0 TP', act: 'Activation' }[view] || view;
+  const viewName = { perf: 'Performance', app: 'App Install', ztp: '0 TP', act: 'Activation', rev: 'Manager Review' }[view] || view;
   const spec = acMetricSpec(view);
   const tree = Object.fromEntries(Object.entries(getFilteredTree()).filter(([k]) => !k.startsWith('(')));
   const all = Object.values(tree).flatMap(nodeEmployees);
@@ -2133,6 +2142,7 @@ function buildClaudePrompt(){
   if(view === 'perf' || view === 'act') filters.push(`Turnover: ${{ all: 'All', under: '<1.5Cr', over: '>=1.5Cr', no_gst: 'No GST' }[currentTurnoverFilter] || currentTurnoverFilter}`);
   const defs = {
     act: 'Single Activation % = L1s with 1+ sales / L1s mapped. Multi Activation % = L1s with 2+ sales / L1s mapped.',
+    rev: 'Manager Review % = meetings the L1 did alone that the manager reviewed (status 1 or 2) / all meetings the L1 did alone. Meetings with a proforma or status 3/7 are excluded.',
     ztp: '0 TP % = meetings where the L1 earned 0 approved TP / all meetings (lower is better). Unapproved TP counts as 0, so the current week can look high.',
     app: 'Drive % = installed after the meeting / (installed after + not installed). Coverage % = (had app + installed after) / GLIDs met.',
     perf: 'Sales = sales from the uploaded sales dump. HP/HL = Hot Prospects + Top-3 HL leads (deduplicated). 0 TP % = meetings with 0 approved TP / all meetings.',
@@ -2220,6 +2230,184 @@ async function acCopy(text){
   document.getElementById('ac-close').addEventListener('click', () => { modal.hidden = true; });
   modal.addEventListener('click', ev => { if(ev.target === modal) modal.hidden = true; });
 })();
+
+// ---------------------------------------------------------------------
+// Manager Review: of the meetings an L1 did alone (withmgr_or_alone = 0),
+// how many the manager reviewed (sts_dsr_sales_mgr_status 1 or 2).
+// Meetings with a proforma or status 3/7 are left out (query 52358).
+// ---------------------------------------------------------------------
+function reviewOf(nodeOrList, p){
+  const emps = Array.isArray(nodeOrList) ? nodeOrList : nodeEmployees(nodeOrList);
+  const r = { hc: emps.length, alone: 0, reviewed: 0 };
+  for(const e of emps){
+    const m = (e.metrics && e.metrics[p]) || {};
+    r.alone += m.alone_meet || 0; r.reviewed += m.reviewed_meet || 0;
+  }
+  r.rp = pctNum(r.reviewed, r.alone);
+  return r;
+}
+const REV_MIN_L2 = 20;   // alone meetings in an L2's team before it is ranked
+let revBreakLevel = 'ZM';
+try{ const v = localStorage.getItem('rev_level'); if(['ZM', 'RM', 'Location'].includes(v)) revBreakLevel = v; }catch(e){}
+function revTable(kind, rows, t, withSub){
+  if(!rows.length) return `<div class="multiselect-empty">Not enough data.</div>`;
+  return `<table class="lead-table act-table"><thead><tr><th>${kind}</th><th>L1s</th><th>Alone Meetings</th><th>Reviewed</th><th>Not Reviewed</th><th>Review %</th></tr></thead><tbody>
+    ${rows.map(r => `<tr><td><div class="lead-name">${escHtml(r.name)}</div>${withSub ? `<div class="lead-sub">${escHtml(r.sub)}</div>` : ''}</td>
+      <td>${fmtNum(r.hc)}</td><td>${fmtNum(r.alone)}</td><td>${fmtNum(r.reviewed)}</td><td>${fmtNum(r.alone - r.reviewed)}</td>
+      <td class="${t.rp !== null && r.rp !== null && r.rp < t.rp ? 'bad' : 'good'}">${fmtP(r.rp)}</td></tr>`).join('')}
+    </tbody></table>`;
+}
+function revL2Rows(tree, p){
+  const g = new Map();
+  for(const z of Object.values(tree)) for(const r of Object.values(z.rm_children))
+    for(const [loc, l] of Object.entries(r.location_children)) for(const e of l.employees){
+      const mgr = e.manager_name; if(!mgr) continue;
+      if(!g.has(mgr)) g.set(mgr, { name: mgr, emps: [], locs: new Set() });
+      g.get(mgr).emps.push(e); g.get(mgr).locs.add(loc);
+    }
+  return [...g.values()].map(x => ({ name: x.name, ...reviewOf(x.emps, p),
+    sub: `${[...x.locs].slice(0, 2).join(', ')}${x.locs.size > 2 ? ` +${x.locs.size - 2}` : ''}` }));
+}
+function renderRevView(){
+  const panel = document.getElementById('funnel-panel');
+  const stats = (dashboardData.perf_meta && dashboardData.perf_meta.stats) || {};
+  if(!stats.has_review){
+    panel.innerHTML = `<div class="app-empty">No manager review data yet. It arrives with the daily <code>push_local.py</code> run (performance query 52358).</div>`;
+    return;
+  }
+  const p = currentPeriod;
+  const tree = Object.fromEntries(Object.entries(getFilteredTree()).filter(([k]) => !k.startsWith('(')));
+  const all = Object.values(tree).flatMap(nodeEmployees);
+  const t = reviewOf(all, p);
+  const cards = [
+    { label: 'Meetings Done Alone', value: fmtNum(t.alone), sub: `by ${fmtNum(t.hc)} L1s` },
+    { label: 'Reviewed by Manager', value: fmtNum(t.reviewed), sub: 'manager status 1 or 2' },
+    { label: 'Not Reviewed', value: fmtNum(t.alone - t.reviewed), sub: `${fmtP(pctNum(t.alone - t.reviewed, t.alone))} of alone meetings` },
+    { label: 'Manager Review %', value: fmtP(t.rp), sub: 'reviewed ÷ alone meetings' },
+  ];
+  const weeks = ['w3', 'w2', 'w1'].map(w => {
+    const r = reviewOf(all, w);
+    return { label: periodLabel(w).replace('Wk ', ''), value: r.rp || 0, display: fmtP(r.rp),
+             pct: `${fmtNum(r.reviewed)} of ${fmtNum(r.alone)}`, color: w === p ? 'var(--navy)' : '#7F93AD' };
+  });
+  const level = revBreakLevel, nodes = [];
+  for(const [zm, z] of Object.entries(tree)){
+    if(level === 'ZM'){ nodes.push([zm, z, '']); continue; }
+    for(const [rm, r] of Object.entries(z.rm_children)){
+      if(level === 'RM'){ nodes.push([rm, r, zm]); continue; }
+      for(const [loc, l] of Object.entries(r.location_children)) nodes.push([loc, l, rm]);
+    }
+  }
+  const rows = nodes.map(([name, node, sub]) => ({ name, sub, ...reviewOf(node, p) }))
+    .filter(r => r.alone > 0)
+    .sort((a, b) => b.rp - a.rp || b.alone - a.alone);
+  const l2all = revL2Rows(tree, p), l2el = l2all.filter(r => r.alone >= REV_MIN_L2);
+  const best = [...l2el].sort((a, b) => b.rp - a.rp || b.alone - a.alone).slice(0, 5);
+  const bs = new Set(best);
+  const worst = [...l2el].sort((a, b) => a.rp - b.rp || b.alone - a.alone).filter(r => !bs.has(r)).slice(0, 5);
+  panel.innerHTML = `
+    <div class="funnel-cards" style="margin-top:0">
+      ${cards.map(c => `<div class="funnel-card"><div class="label">${escHtml(c.label)}</div><div class="value">${c.value}</div><div class="app-note" style="margin-top:4px">${c.sub}</div></div>`).join('')}
+    </div>
+    <div class="lead-grid">
+      <div class="funnel-col">
+        <div class="funnel-header"><h2>Manager Review % — Weekly Trend</h2><span class="sub">Last 3 full weeks · reviewed ÷ meetings done alone</span></div>
+        ${renderBarStages(weeks)}
+      </div>
+      <div class="funnel-col">
+        <div class="funnel-header"><h2>Manager Review by ${level}</h2>
+          <span class="act-level">${['ZM', 'RM', 'Location'].map(l => `<button type="button" data-rev-level="${l}" class="${l === level ? 'active' : ''}">${l}</button>`).join('')}</span>
+          <span class="sub">${escHtml(periodLabel(p))} · ${rows.length} ${level === 'Location' ? 'locations' : level + 's'} · red = below overall ${fmtP(t.rp)}</span></div>
+        <div class="act-scroll">${revTable(level, rows, t, level !== 'ZM')}</div>
+      </div>
+    </div>
+    <div class="lead-grid">
+      <div class="funnel-col">
+        <div class="funnel-header"><h2>L2s — Top 5 by Review %</h2>
+          <span class="sub">${escHtml(periodLabel(p))} · ${l2el.length} of ${l2all.length} L2s ranked (min ${REV_MIN_L2} alone meetings in team)</span></div>
+        ${revTable('L2', best, t, true)}
+      </div>
+      <div class="funnel-col">
+        <div class="funnel-header"><h2>L2s — Bottom 5 by Review %</h2>
+          <span class="sub">${escHtml(periodLabel(p))} · ties broken by alone meetings</span></div>
+        ${revTable('L2', worst, t, true)}
+      </div>
+    </div>
+    <p class="app-note"><b>Manager Review %</b> = meetings the L1 did alone (withmgr_or_alone = 0) that the manager reviewed (sts_dsr_sales_mgr_status 1 or 2) ÷ all meetings the L1 did alone. Meetings with a proforma or status 3 / 7 are left out.</p>`;
+  panel.querySelectorAll('[data-rev-level]').forEach(b => b.addEventListener('click', () => {
+    revBreakLevel = b.dataset.revLevel;
+    try{ localStorage.setItem('rev_level', revBreakLevel); }catch(e){}
+    renderRevView();
+  }));
+}
+function renderRevTree(){
+  const stats = (dashboardData.perf_meta && dashboardData.perf_meta.stats) || {};
+  if(!stats.has_review){ contentEl.innerHTML = ''; return; }
+  const p = currentPeriod, tips = [];
+  const tree = Object.fromEntries(Object.entries(getFilteredTree()).filter(([k]) => !k.startsWith('(')));
+  const cells = r => `<div class="num">${fmtNum(r.hc)}</div><div class="num">${fmtNum(r.alone)}</div>
+    <div class="num">${fmtNum(r.reviewed)}</div><div class="num">${fmtNum(r.alone - r.reviewed)}</div><div class="num">${fmtP(r.rp)}</div>`;
+  let html = `<div class="tree-panel rev-mode">
+    <div class="tree-header"><div>Name</div><div class="num">Total L1</div><div class="num">Alone Meetings</div>
+      <div class="num">Reviewed</div><div class="num">Not Reviewed</div><div class="num">Review %</div></div>`;
+  const byHc = (obj) => Object.keys(obj).sort((a, b) => (obj[b].headcount - obj[a].headcount) || a.localeCompare(b));
+  for(const zm of byHc(tree)){
+    const zmNode = tree[zm], zmOpen = expanded.zm.has(zm);
+    html += `<div class="tree-row depth-0" data-toggle="zm" data-key="${escAttr(zm)}">
+      <div class="name-cell"><span class="caret">${zmOpen ? '▼' : '▶'}</span>${escHtml(zm)}</div>${cells(reviewOf(zmNode, p))}</div>`;
+    if(!zmOpen) continue;
+    for(const rm of byHc(zmNode.rm_children)){
+      const rmNode = zmNode.rm_children[rm], rmKey = zm + '||' + rm, rmOpen = expanded.rm.has(rmKey);
+      html += `<div class="tree-row depth-1" data-toggle="rm" data-key="${escAttr(rmKey)}">
+        <div class="name-cell"><span class="caret">${rmOpen ? '▼' : '▶'}</span>${escHtml(rm)}</div>${cells(reviewOf(rmNode, p))}</div>`;
+      if(!rmOpen) continue;
+      for(const loc of byHc(rmNode.location_children)){
+        const locNode = rmNode.location_children[loc], locKey = rmKey + '||' + loc, locOpen = expanded.loc.has(locKey);
+        html += `<div class="tree-row depth-2" data-toggle="loc" data-key="${escAttr(locKey)}">
+          <div class="name-cell"><span class="caret">${locOpen ? '▼' : '▶'}</span>${escHtml(loc)}</div>${cells(reviewOf(locNode, p))}</div>`;
+        if(!locOpen) continue;
+        const byMgr = new Map();
+        for(const e of locNode.employees){ const m = e.manager_name || '(No L2)'; if(!byMgr.has(m)) byMgr.set(m, []); byMgr.get(m).push(e); }
+        for(const [mgr, emps] of [...byMgr.entries()].sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]))){
+          tips.push({ title: mgr, list: emps.map(e => { const r = reviewOf([e], p); return { name: e.name || e.id, ...r }; })
+            .sort((a, b) => b.alone - a.alone || String(a.name).localeCompare(String(b.name))) });
+          html += `<div class="tree-row depth-3" data-tip="${tips.length - 1}">
+            <div class="name-cell">${escHtml(mgr)} <span class="headcount-pill">(L2)</span></div>${cells(reviewOf(emps, p))}</div>`;
+        }
+      }
+    }
+  }
+  contentEl.innerHTML = html + `</div>`;
+  let tip = document.getElementById('act-tip');
+  if(!tip){ tip = document.createElement('div'); tip.id = 'act-tip'; document.body.appendChild(tip); }
+  tip.style.display = 'none';
+  contentEl.querySelectorAll('[data-tip]').forEach(el => {
+    el.addEventListener('mouseenter', () => {
+      const d = tips[+el.dataset.tip]; if(!d) return;
+      tip.innerHTML = `<div class="t">${escHtml(d.title)} · ${escHtml(periodLabel(p))}</div>
+        <table><tr><td><b>L1</b></td><td><b>Reviewed / Alone</b></td></tr>
+        ${d.list.slice(0, 30).map(x => `<tr><td>${escHtml(x.name)}</td><td>${fmtNum(x.reviewed)} / ${fmtNum(x.alone)}${x.alone ? ` (${fmtP(x.rp)})` : ''}</td></tr>`).join('')}</table>
+        ${d.list.length > 30 ? `<div class="more">+${d.list.length - 30} more</div>` : ''}`;
+      tip.style.display = 'block';
+    });
+    el.addEventListener('mousemove', ev => {
+      const w = tip.offsetWidth, h = tip.offsetHeight;
+      let x = ev.clientX + 14, y = ev.clientY + 14;
+      if(x + w > window.innerWidth - 8) x = ev.clientX - w - 14;
+      if(y + h > window.innerHeight - 8) y = Math.max(8, window.innerHeight - h - 8);
+      tip.style.left = x + 'px'; tip.style.top = y + 'px';
+    });
+    el.addEventListener('mouseleave', () => { tip.style.display = 'none'; });
+  });
+  contentEl.querySelectorAll('[data-toggle]').forEach(el => {
+    el.addEventListener('click', () => {
+      const level = el.dataset.toggle, key = el.dataset.key;
+      if(expanded[level].has(key)) expanded[level].delete(key); else expanded[level].add(key);
+      tip.style.display = 'none';
+      renderRevTree();
+    });
+  });
+}
 
 // (Search panel removed — search-box no longer exists in the DOM.)
 
