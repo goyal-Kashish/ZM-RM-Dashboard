@@ -171,6 +171,9 @@ PERIODS += WEEK_PERIODS
 # Meetings where the L1 earned 0 approved TP (from the performance query).
 for _p in ["wtd", "mtd"] + WEEK_PERIODS:
     METRIC_FIELDS[_p]["zero_tp_meet"] = f"zero_tp_meet_{_p}"
+    # Manager review: meetings done alone / of those reviewed by the manager
+    METRIC_FIELDS[_p]["alone_meet"] = f"alone_meet_{_p}"
+    METRIC_FIELDS[_p]["reviewed_meet"] = f"reviewed_meet_{_p}"
 
 UNDERPERFORMER_METRIC = "month_sales_done"   # MTD sales count (from the sales dump); ranks within each location group
 UNDERPERFORMER_PCT = 0.20              # bottom 20% flagged, minimum 1 per group if group is non-empty
@@ -306,8 +309,9 @@ def build_node_metrics(rows):
             agg["total_meet"] += _num(r, fields["total_meet"]) or 0
             agg["followup_meet"] += _num(r, fields["followup_meet"]) or 0
             agg["with_mgr_meet_general"] += _num(r, fields["with_mgr_meet_general"]) or 0
-            if fields.get("zero_tp_meet"):
-                agg["zero_tp_meet"] = agg.get("zero_tp_meet", 0) + (_num(r, fields["zero_tp_meet"]) or 0)
+            for _k in ("zero_tp_meet", "alone_meet", "reviewed_meet"):
+                if fields.get(_k):
+                    agg[_k] = agg.get(_k, 0) + (_num(r, fields[_k]) or 0)
             if has_meeting_turnover:
                 agg["total_meet_under"] += _num(r, fields["total_meet_under"]) or 0
                 agg["followup_meet_under"] += _num(r, fields["followup_meet_under"]) or 0
@@ -446,6 +450,8 @@ def build_employee_summary(row):
             "combined_converted_met_over": _num(row, fields["combined_converted_met_over"]) or 0,
             "total_meet": _num(row, fields["total_meet"]) or 0,
             "zero_tp_meet": _num(row, fields.get("zero_tp_meet")) or 0,
+            "alone_meet": _num(row, fields.get("alone_meet")) or 0,
+            "reviewed_meet": _num(row, fields.get("reviewed_meet")) or 0,
             "fresh_meet": _num(row, fields["fresh_meet"]) or 0,
             "avg_talktime": row.get(TALKTIME_FIELD_BY_PERIOD[period]),
         }
