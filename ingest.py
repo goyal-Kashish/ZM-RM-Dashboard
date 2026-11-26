@@ -491,7 +491,7 @@ PERF_REQUIRED = ["row_kind", "employee_id", "period"] + PERF_EMP_KEYS + [
     "glid", "turnover_bucket", "is_hp", "hp_anchor_date", "hp_with_mgr", "hp_tp_sum", "hp_tp_over_200",
     "is_hl", "hl_anchor_date", "hl_with_mgr", "hl_tp_over_200"]
 # Optional columns (older versions of the query don't have them).
-PERF_EMP_KEYS = PERF_EMP_KEYS + ["zero_tp_meet"]
+PERF_EMP_KEYS = PERF_EMP_KEYS + ["zero_tp_meet", "alone_meet", "reviewed_meet"]
 _BUCKET = {"under_1.5cr": 1, "over_1.5cr": 2}
 
 
@@ -532,6 +532,8 @@ def parse_perf_rows(row_iter, as_of=None):
             stats["emp_rows"] += 1
             if "zero_tp_meet" in r:
                 stats["has_zero_tp"] = 1
+            if "reviewed_meet" in r:
+                stats["has_review"] = 1
         elif kind == "lead":
             glid = normalize_id(r.get("glid"))
             if not glid:
@@ -632,12 +634,15 @@ def overlay_perf_on_rows(rows, perf, sales):
             F = METRIC_FIELDS[p]
             e = dict(zip(PERF_EMP_KEYS, (emp.get(eid, {}).get(p) or [0] * len(PERF_EMP_KEYS))))
             e.setdefault("zero_tp_meet", 0)   # data pushed before this column existed
+            e.setdefault("alone_meet", 0)
+            e.setdefault("reviewed_meet", 0)
             a = agg.get((eid, p), Counter())
             put = lambda key, val: r.__setitem__(F[key], val) if F.get(key) else None
             put("total_meet", e["total_meet"]); put("fresh_meet", e["fresh_meet"])
             put("followup_meet", e["followup_meet"]); put("with_mgr_meet_general", e["with_mgr_meet"])
             put("working_days", e["working_days"])
             put("zero_tp_meet", e["zero_tp_meet"])
+            put("alone_meet", e["alone_meet"]); put("reviewed_meet", e["reviewed_meet"])
             for suf in ("_under", "_over"):
                 put("total_meet" + suf, e["total_meet" + suf])
                 put("followup_meet" + suf, e["followup_meet" + suf])
